@@ -2,6 +2,7 @@ import OpenAI from 'openai'
 import { createToolSession, openaiTools } from './tools.mjs'
 
 const MAX_TOOL_ROUNDS = 6
+const MAX_HISTORY = 12
 
 function env(name, fallback = '') {
   const value =
@@ -23,9 +24,8 @@ export function resolveAiConfig() {
 /**
  * Run an ops tool-use loop against Rosato's content.
  * Mutations stay in-memory until /api/publish confirms.
- * Model is configurable — not tied to a single vendor brand.
  */
-export async function runOpsChat({ message, bundle }) {
+export async function runOpsChat({ message, bundle, history = [] }) {
   const trimmed = String(message || '').trim()
   if (!trimmed) {
     throw Object.assign(new Error('Message is empty'), { status: 400 })
@@ -43,8 +43,10 @@ export async function runOpsChat({ message, bundle }) {
 
   const session = createToolSession(bundle)
   const client = new OpenAI()
+  const prior = normalizeHistory(history)
   const messages = [
     { role: 'system', content: SYSTEM_PROMPT },
+    ...prior,
     { role: 'user', content: trimmed },
   ]
 
@@ -53,7 +55,7 @@ export async function runOpsChat({ message, bundle }) {
   for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
     const response = await client.chat.completions.create({
       model,
-      temperature: 0.1,
+      temperature: 0,
       messages,
       tools: openaiTools(),
       tool_choice: 'auto',
@@ -95,15 +97,15 @@ export async function runOpsChat({ message, bundle }) {
   const changed = session.state.changed
   const hasChanges = changed.size > 0
 
-  if (!hasChanges && !finalText) {
+  if (hasChanges) {
+    finalText = [
+      'Staged — nothing is live yet.',
+      ...session.state.descriptions.map((line) => `• ${line}`),
+      'Use Confirm & publish below to write into Rosato’s content JSON.',
+    ].join('\n')
+  } else if (!finalText) {
     finalText =
       'I checked Rosato’s content but did not stage any changes. Try a price or lineup update.'
-  }
-
-  if (hasChanges && !finalText) {
-    finalText = `Ready to publish:\n${session.state.descriptions
-      .map((line) => `• ${line}`)
-      .join('\n')}`
   }
 
   return {
@@ -121,8 +123,27 @@ export async function runOpsChat({ message, bundle }) {
   }
 }
 
-const SYSTEM_PROMPT = `You are Quiet Objects ops for Rosato’s (Moville).
-Help the manager keep programme and menu prices honest via tools.
+function normalizeHistory(history) {
+  if (!Array.isArray(history)) return []
+  return history
+    .filter(
+      (row) =>
+        row &&
+        (row.role === 'user' || row.role === 'assistant') &&
+        typeof row.content === 'string' &&
+        row.content.trim(),
+    )
+    .slice(-MAX_HISTORY)
+    .map((row) => ({
+      role: row.role,
+      content: row.content.trim().slice(0, 2000),
+    }))
+}
+
+const SYSTEM_PROMPT = `You are Quiet Objects ops for Rosato’s (Moville, Ireland).
+Currency is euro (€), never pounds.
+
+Your job: call tools to stage programme/menu updates. The web UI has a separate Confirm & publish button — you must NOT ask the human to type “confirm” in chat.
 
 Tools:
 - list_programme — inspect this week’s lineup / tonight override
@@ -131,7 +152,9 @@ Tools:
 - set_tonight_override — set or clear tonight’s cue (empty string clears)
 
 Rules:
-- Only use tools for content changes. Do not invent menu items that are not being priced.
+- When the request is clear (e.g. “Steak Burger is 17.50”, “Saturday is Seán Óg at 22:00”), call the tool immediately. Do not ask permission first.
+- If the human says “confirm”, “yes”, “do it”, or similar after you already proposed a change in chat history, call the matching tool now.
+- Never invent menu items. Match existing names when pricing.
 - Never touch venue chrome, booking, gift cards, colours, or layout.
-- After mutations, briefly confirm what will be staged. The human must confirm before publish.
-- If the request is unclear, ask a short clarifying question and call no mutating tools.`
+- After a successful tool mutation, keep the reply short — the UI will show Confirm & publish.
+- Only ask a clarifying question when the request is genuinely ambiguous and no tool can be called yet.`

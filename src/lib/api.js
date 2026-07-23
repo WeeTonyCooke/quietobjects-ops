@@ -14,10 +14,10 @@ async function request(path, options = {}) {
   return data
 }
 
-export function chat(message) {
+export function chat(message, history = []) {
   return request('/api/chat', {
     method: 'POST',
-    body: JSON.stringify({ message }),
+    body: JSON.stringify({ message, history }),
   })
 }
 

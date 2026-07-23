@@ -20,20 +20,28 @@ export default async (req: Request, _context: Context) => {
     const user = await requireOpsUser()
     const body = await req.json()
     const message = body?.message
+    const history = Array.isArray(body?.history) ? body.history : []
 
     const { files, meta, repo, branch } = await readJsonFiles(EDITABLE_FILES)
     const bundle = bundleFromFiles(files)
 
     let result
     let source = 'ai-tools'
-    try {
-      result = await runOpsChat({ message, bundle })
-      source = `${result.provider}:${result.model}`
-    } catch (error) {
-      // Gateway / key unavailable in fresh local envs — same tools via fallback.
-      result = await runDeterministicOpsChat({ message, bundle })
+
+    // Clear actionable phrases go through the same tools without waiting on the model.
+    const deterministic = await runDeterministicOpsChat({ message, bundle })
+    if (deterministic.hasChanges) {
+      result = deterministic
       source = 'deterministic-tools'
-      result.reply = `${result.reply}\n\n(AI gateway unavailable: ${error.message})`
+    } else {
+      try {
+        result = await runOpsChat({ message, bundle, history })
+        source = `${result.provider}:${result.model}`
+      } catch (error) {
+        result = deterministic
+        source = 'deterministic-tools'
+        result.reply = `${result.reply}\n\n(AI gateway unavailable: ${error.message})`
+      }
     }
 
     if (!result.hasChanges) {

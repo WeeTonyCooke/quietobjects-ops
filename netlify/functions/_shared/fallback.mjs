@@ -94,9 +94,11 @@ function finish(session, reply) {
     reply:
       reply ||
       (hasChanges
-        ? `Ready to publish:\n${session.state.descriptions
-            .map((line) => `• ${line}`)
-            .join('\n')}`
+        ? [
+            'Staged — nothing is live yet.',
+            ...session.state.descriptions.map((line) => `• ${line}`),
+            'Use Confirm & publish below to write into Rosato’s content JSON.',
+          ].join('\n')
         : 'No changes staged.'),
     descriptions: session.state.descriptions,
     toolTrace: session.state.toolTrace,

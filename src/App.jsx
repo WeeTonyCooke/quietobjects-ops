@@ -103,10 +103,16 @@ export default function App() {
     setBusy(true)
     setDraft('')
     setPending(null)
+
+    const history = messages
+      .filter((row) => row.role === 'user' || row.role === 'assistant')
+      .filter((row) => row.id !== 'welcome')
+      .map((row) => ({ role: row.role, content: row.text }))
+
     pushMessage({ role: 'user', text: message })
 
     try {
-      const result = await chat(message)
+      const result = await chat(message, history)
       pushMessage({
         role: 'assistant',
         text: result.reply || result.summary || 'Staged.',

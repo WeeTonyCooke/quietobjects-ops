@@ -1,0 +1,27 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+  functions = "netlify/functions"
+
+[functions]
+  node_bundler = "esbuild"
+  directory = "netlify/functions"
+
+# Identity (invite-only) protects the admin chat once enabled in Netlify.
+# Env required for publish:
+#   CONTENT_GITHUB_TOKEN  — PAT with contents:write on WeeTonyCooke/rosatos
+#   CONTENT_REPO          — default WeeTonyCooke/rosatos
+#   CONTENT_BRANCH        — default main
+#   PROPOSAL_SIGNING_SECRET — HMAC secret for confirm-then-publish tokens
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

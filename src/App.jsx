@@ -20,12 +20,39 @@ import ChatThread from './components/ChatThread.jsx'
 import ConfirmCard from './components/ConfirmCard.jsx'
 import AuditLog from './components/AuditLog.jsx'
 
-const SUGGESTIONS = [
-  'list programme',
-  'Steak Burger is 17.50',
-  'Saturday is Seán Óg at 22:00',
-  'Tonight override is Quiz night · 22:00',
+const VENUES = [
+  { id: 'rosatos', label: "Rosato's" },
+  { id: 'festival', label: 'Moville Festival' },
 ]
+
+const VENUE_CONFIG = {
+  rosatos: {
+    title: "Rosato's ops",
+    lede: 'Stage programme or menu changes from chat or a PDF. Confirm before anything publishes.',
+    welcome: 'Rosato's Phase 1 ops. Type a change, or attach a PDF menu update — then press Confirm before anything publishes.',
+    suggestions: [
+      'list programme',
+      'Steak Burger is 17.50',
+      'Saturday is Seán Óg at 22:00',
+      'Tonight override is Quiz night · 22:00',
+    ],
+    defaultRepo: 'WeeTonyCooke/rosatos',
+    attachPdf: true,
+  },
+  festival: {
+    title: 'Moville Festival ops',
+    lede: 'Stage programme changes from chat. Confirm before anything publishes.',
+    welcome: 'Moville Festival Phase 2 ops. Describe a programme change — then press Confirm before anything publishes.',
+    suggestions: [
+      'list programme',
+      'Wednesday 7pm Fancy Dress Parade at Festival Square',
+      'Bed Push is Thursday at 19:00 at Quay Street',
+      'remove Bed Push from Thursday',
+    ],
+    defaultRepo: 'WeeTonyCooke/movillefestival',
+    attachPdf: false,
+  },
+}
 
 export default function App() {
   const [user, setUser] = useState(null)
@@ -33,22 +60,19 @@ export default function App() {
   const [authMode, setAuthMode] = useState('login')
   const [inviteToken, setInviteToken] = useState(null)
   const [authError, setAuthError] = useState('')
+  const [venue, setVenue] = useState('rosatos')
   const [busy, setBusy] = useState(false)
   const [draft, setDraft] = useState('')
   const [attachment, setAttachment] = useState(null)
-  const [messages, setMessages] = useState([
-    {
-      id: 'welcome',
-      role: 'assistant',
-      text: 'Rosato’s Phase 1 ops. Type a change, or attach a PDF menu update — then press Confirm before anything publishes.',
-    },
-  ])
+  const [messages, setMessages] = useState(() => makeWelcome('rosatos'))
   const [pending, setPending] = useState(null)
   const [contentMeta, setContentMeta] = useState(null)
   const [lastPublish, setLastPublish] = useState(null)
   const [auditEntries, setAuditEntries] = useState([])
   const inputRef = useRef(null)
   const fileRef = useRef(null)
+
+  const venueConfig = VENUE_CONFIG[venue]
 
   useEffect(() => {
     let alive = true
@@ -86,10 +110,10 @@ export default function App() {
     }
   }, [])
 
-  async function refreshMeta() {
+  async function refreshMeta(v = venue) {
     try {
       const [content, audit] = await Promise.all([
-        fetchContent().catch(() => null),
+        fetchContent(v).catch(() => null),
         fetchAudit(12).catch(() => ({ entries: [] })),
       ])
       if (content) setContentMeta({ repo: content.repo, branch: content.branch })
@@ -101,8 +125,19 @@ export default function App() {
 
   useEffect(() => {
     if (!user && import.meta.env.VITE_OPS_AUTH_BYPASS !== '1') return
-    refreshMeta()
+    refreshMeta(venue)
   }, [user])
+
+  function switchVenue(next) {
+    if (next === venue || busy) return
+    setVenue(next)
+    setPending(null)
+    setAttachment(null)
+    setDraft('')
+    setMessages(makeWelcome(next))
+    setContentMeta(null)
+    refreshMeta(next)
+  }
 
   async function handleLogin({ email, password }) {
     setAuthError('')
@@ -196,12 +231,12 @@ export default function App() {
       ? attachment
         ? `${message}\n(with ${attachment.name})`
         : message
-      : `Update menu from attached PDF: ${attachment.name}`
+      : `Update from attached PDF: ${attachment.name}`
 
     pushMessage({ role: 'user', text: userLine })
 
     try {
-      const result = await chat(message, history, attachment?.id || null)
+      const result = await chat(message, history, attachment?.id || null, venue)
       pushMessage({
         role: 'assistant',
         text: result.reply || result.summary || 'Staged.',
@@ -218,7 +253,7 @@ export default function App() {
         })
         setAttachment(null)
       }
-      refreshMeta()
+      refreshMeta(venue)
     } catch (error) {
       pushMessage({
         role: 'assistant',
@@ -246,7 +281,7 @@ export default function App() {
         text: `Published to ${result.commit.repo}@${result.commit.branch}.\n${result.summary}`,
         meta: 'published',
       })
-      refreshMeta()
+      refreshMeta(venue)
     } catch (error) {
       pushMessage({
         role: 'assistant',
@@ -293,17 +328,27 @@ export default function App() {
       <header className="top">
         <div className="brand-block">
           <p className="eyebrow">Quiet Objects</p>
-          <h1>Rosato’s ops</h1>
-          <p className="lede">
-            Stage programme or menu changes from chat or a PDF. Confirm before
-            anything publishes.
-          </p>
+          <h1>{venueConfig.title}</h1>
+          <p className="lede">{venueConfig.lede}</p>
         </div>
         <div className="top-meta">
+          <nav className="venue-switcher" aria-label="Venue">
+            {VENUES.map((v) => (
+              <button
+                key={v.id}
+                type="button"
+                className={v.id === venue ? 'venue-btn active' : 'venue-btn'}
+                disabled={busy}
+                onClick={() => switchVenue(v.id)}
+              >
+                {v.label}
+              </button>
+            ))}
+          </nav>
           <p>
             {contentMeta
               ? `${contentMeta.repo} · ${contentMeta.branch}`
-              : 'WeeTonyCooke/rosatos'}
+              : venueConfig.defaultRepo}
           </p>
           <button type="button" className="ghost" onClick={handleLogout} disabled={bypass}>
             {bypass ? 'Dev bypass' : 'Sign out'}
@@ -339,7 +384,11 @@ export default function App() {
             rows={2}
             value={draft}
             disabled={busy}
-            placeholder="e.g. Steak Burger is 17.50 — or attach a PDF menu"
+            placeholder={
+              venue === 'festival'
+                ? 'e.g. Wednesday 7pm Fancy Dress Parade at Festival Square'
+                : 'e.g. Steak Burger is 17.50 — or attach a PDF menu'
+            }
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === 'Enter' && !event.shiftKey) {
@@ -365,23 +414,27 @@ export default function App() {
 
           <div className="composer-row">
             <div className="composer-left">
-              <input
-                ref={fileRef}
-                type="file"
-                accept="application/pdf,.pdf"
-                className="sr-only"
-                onChange={handleFileChange}
-              />
-              <button
-                type="button"
-                className="ghost"
-                disabled={busy}
-                onClick={() => fileRef.current?.click()}
-              >
-                Attach PDF
-              </button>
+              {venueConfig.attachPdf ? (
+                <>
+                  <input
+                    ref={fileRef}
+                    type="file"
+                    accept="application/pdf,.pdf"
+                    className="sr-only"
+                    onChange={handleFileChange}
+                  />
+                  <button
+                    type="button"
+                    className="ghost"
+                    disabled={busy}
+                    onClick={() => fileRef.current?.click()}
+                  >
+                    Attach PDF
+                  </button>
+                </>
+              ) : null}
               <div className="suggestions">
-                {SUGGESTIONS.map((item) => (
+                {venueConfig.suggestions.map((item) => (
                   <button
                     key={item}
                     type="button"
@@ -413,4 +466,14 @@ export default function App() {
       </main>
     </div>
   )
+}
+
+function makeWelcome(venueId) {
+  return [
+    {
+      id: 'welcome',
+      role: 'assistant',
+      text: VENUE_CONFIG[venueId].welcome,
+    },
+  ]
 }

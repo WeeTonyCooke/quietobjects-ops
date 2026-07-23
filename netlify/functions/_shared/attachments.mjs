@@ -56,7 +56,7 @@ export async function extractPdfText(buffer) {
     const text = Array.isArray(result.text)
       ? result.text.join('\n')
       : String(result.text || result || '')
-    return text.replace(/\0/g, '').trim()
+    return text.split('\0').join('').trim()
   } catch (error) {
     throw Object.assign(
       new Error(`Could not read PDF text: ${error.message}`),

@@ -13,6 +13,7 @@
 #   CONTENT_REPO          — default WeeTonyCooke/rosatos
 #   CONTENT_BRANCH        — default main
 #   PROPOSAL_SIGNING_SECRET — HMAC secret for confirm-then-publish tokens
+# AI Gateway injects ANTHROPIC_* for Claude tools after a production deploy.
 
 [[headers]]
   for = "/*"

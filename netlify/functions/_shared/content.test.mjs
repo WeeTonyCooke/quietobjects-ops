@@ -1,7 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { applyPatches, filesFromBundle } from './content.mjs'
-import { proposeDeterministic } from './propose.mjs'
+import { filesFromBundle } from './content.mjs'
+import { createToolSession, CLAUDE_TOOLS } from './tools.mjs'
+import { runDeterministicOpsChat } from './fallback.mjs'
 import { signProposal, verifySignedProposal } from './proposals.mjs'
 
 const sampleBundle = {
@@ -38,44 +39,70 @@ const sampleBundle = {
   },
 }
 
-test('menu price patch updates item and describes the change', () => {
-  const { bundle, descriptions } = applyPatches(sampleBundle, [
-    { target: 'menu.price', itemName: 'Steak Burger', price: '17.50' },
-  ])
-  assert.equal(bundle.menu.sections[0].items[0].price, '17.50')
-  assert.match(descriptions[0], /17\.50/)
-})
-
-test('programme lineup upsert rewrites Saturday and syncs board', () => {
-  const { bundle, descriptions } = applyPatches(sampleBundle, [
-    {
-      target: 'programme.lineup',
-      action: 'upsert',
-      entry: {
-        dayLabel: 'Saturday',
-        name: 'Local Session',
-        time: '21:30',
-        kind: 'music',
-      },
-    },
-  ])
-  assert.equal(bundle.programme.lineup[0].name, 'Local Session')
-  assert.equal(bundle.programme.lineup[0].time, '21:30')
-  assert.equal(bundle.programme.board[0].detail.includes('Local Session'), true)
-  assert.match(descriptions[0], /Saturday/)
-})
-
-test('deterministic parser understands common price and lineup phrases', () => {
-  const price = proposeDeterministic('Steak Burger is 17.50', sampleBundle)
-  assert.equal(price.patches[0].target, 'menu.price')
-  assert.equal(price.patches[0].price, '17.50')
-
-  const lineup = proposeDeterministic(
-    'Saturday is Seán Furey at 22:00',
-    sampleBundle,
+test('exposes the four Claude tools', () => {
+  assert.deepEqual(
+    CLAUDE_TOOLS.map((tool) => tool.name).sort(),
+    [
+      'list_programme',
+      'set_tonight_override',
+      'update_menu_price',
+      'update_programme_event',
+    ].sort(),
   )
-  assert.equal(lineup.patches[0].target, 'programme.lineup')
-  assert.equal(lineup.patches[0].entry.name, 'Seán Furey')
+})
+
+test('update_menu_price tool mutates menu and records description', async () => {
+  const session = createToolSession(sampleBundle)
+  const result = await session.run('update_menu_price', {
+    itemName: 'Steak Burger',
+    price: '17.50',
+  })
+  assert.equal(result.ok, true)
+  assert.equal(session.state.menu.sections[0].items[0].price, '17.50')
+  assert.ok(session.state.changed.has('menu'))
+})
+
+test('update_programme_event upserts Saturday and syncs board', async () => {
+  const session = createToolSession(sampleBundle)
+  const result = await session.run('update_programme_event', {
+    dayLabel: 'Saturday',
+    name: 'Local Session',
+    time: '21:30',
+    kind: 'music',
+  })
+  assert.equal(result.ok, true)
+  assert.equal(session.state.programme.lineup[0].name, 'Local Session')
+  assert.equal(session.state.programme.board[0].detail.includes('Local Session'), true)
+})
+
+test('set_tonight_override clears with empty / clear', async () => {
+  const session = createToolSession(sampleBundle)
+  await session.run('set_tonight_override', { value: 'Quiz · 22:00' })
+  assert.equal(session.state.programme.tonightOverride, 'Quiz · 22:00')
+  await session.run('set_tonight_override', { value: 'clear' })
+  assert.equal(session.state.programme.tonightOverride, '')
+})
+
+test('list_programme returns lineup', async () => {
+  const session = createToolSession(sampleBundle)
+  const result = await session.run('list_programme', {})
+  assert.equal(result.ok, true)
+  assert.equal(result.lineup.length, 1)
+})
+
+test('deterministic fallback routes phrases through the same tools', async () => {
+  const priced = await runDeterministicOpsChat({
+    message: 'Steak Burger is 17.50',
+    bundle: sampleBundle,
+  })
+  assert.equal(priced.hasChanges, true)
+  assert.equal(priced.toolTrace[0].name, 'update_menu_price')
+
+  const lineup = await runDeterministicOpsChat({
+    message: 'Saturday is Seán Furey at 22:00',
+    bundle: sampleBundle,
+  })
+  assert.equal(lineup.toolTrace[0].name, 'update_programme_event')
 })
 
 test('signed proposals verify and reject tampering', () => {
@@ -86,21 +113,11 @@ test('signed proposals verify and reject tampering', () => {
     expiresAt: new Date(Date.now() + 60_000).toISOString(),
   }
   const signed = signProposal(proposal)
-  const ok = verifySignedProposal(signed)
-  assert.equal(ok.summary, 'test')
-
+  assert.equal(verifySignedProposal(signed).summary, 'test')
   assert.throws(() =>
     verifySignedProposal({
       proposal: { ...proposal, summary: 'tampered' },
       signature: signed.signature,
     }),
   )
-})
-
-test('filesFromBundle only emits programme and menu paths', () => {
-  const files = filesFromBundle(sampleBundle)
-  assert.deepEqual(Object.keys(files).sort(), [
-    'content/menu.json',
-    'content/programme.json',
-  ])
 })

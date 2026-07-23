@@ -1,46 +1,40 @@
 # Phase 1 — Rosato’s ops pilot
 
-Quiet Objects ops console for day-to-day Rosato’s content updates via chat.
+Admin chat + Netlify Functions for day-to-day Rosato’s content updates.
 
-## Goal
+## Claude tools
 
-Managers keep the week honest without opening Decap. They talk in plain language; ops stages a structured change against the shared Hybrid + Light content model; nothing is written until they confirm.
+| Tool | Purpose |
+|---|---|
+| `list_programme` | Read weekly lineup + tonight override |
+| `update_programme_event` | Upsert/remove a day’s event |
+| `update_menu_price` | Change an existing menu item price |
+| `set_tonight_override` | Set or clear tonight’s cue |
 
-## In scope
+Mutations apply in memory only. Publish requires a second, explicit confirm.
 
-- Web admin chat on `quietobjects-ops`
-- Netlify Functions:
-  - `POST /api/chat` — parse message → signed proposal (no write)
-  - `POST /api/publish` — verify signature → commit JSON
-  - `GET /api/content` — read current programme + menu
-- Target repo: `WeeTonyCooke/rosatos`
-- Editable files only:
-  - `content/programme.json`
-  - `content/menu.json`
+## Endpoints
 
-## Out of scope (Phase 1)
+| Method | Path | Role |
+|---|---|---|
+| `POST` | `/api/chat` | Claude tool loop → signed proposal |
+| `POST` | `/api/publish` | Verify proposal → GitHub Contents API writes |
+| `GET` | `/api/content` | Read current programme + menu |
+| `GET` | `/api/audit` | Recent stage/publish audit entries |
 
-- Telegram / WhatsApp (later TemplateBot path)
-- PDF / image menu extraction
-- Edits to `venue.json`, booking, gift cards, colours, layout
+## Publish target
+
+Repo: `WeeTonyCooke/rosatos`  
+Files: `content/programme.json`, `content/menu.json`  
+API: GitHub Contents API (`GET` + `PUT` per file)
+
+## Audit log
+
+Each stage/publish (and empty chat) appends a JSON audit artifact under the Netlify Blobs store `ops-audit`. The admin UI lists recent entries.
+
+## Out of scope
+
+- Telegram / WhatsApp
+- PDF menu extraction
+- `venue.json` / booking / gift cards / design chrome
 - Silent auto-publish
-
-## Confirm-then-publish
-
-1. Chat message is parsed (AI Gateway when available, deterministic fallback otherwise)
-2. Patches apply in memory; a signed proposal returns to the browser
-3. UI shows the staged summary with **Confirm & publish** / **Discard**
-4. Confirm verifies HMAC + expiry, then commits via GitHub Git Data API
-
-## Auth
-
-Production: Netlify Identity (`@netlify/identity`), invite-only.
-
-Local scaffolding may set `OPS_AUTH_BYPASS=1` and `VITE_OPS_AUTH_BYPASS=1` — never in production.
-
-## Example phrases
-
-- `Steak Burger is 17.50`
-- `Saturday is Seán Óg at 22:00`
-- `Tonight override is Quiz night · 22:00`
-- `Tonight override is clear`

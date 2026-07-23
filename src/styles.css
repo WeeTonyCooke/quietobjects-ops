@@ -301,6 +301,51 @@ a {
   font-size: 0.9rem;
 }
 
+.audit {
+  padding: 1rem 1.05rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--panel) 90%, white);
+  animation: rise 600ms var(--ease) both;
+}
+
+.audit ul {
+  list-style: none;
+  margin: 0.55rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.65rem;
+}
+
+.audit li {
+  display: grid;
+  gap: 0.15rem;
+  padding-bottom: 0.65rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.audit li:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.audit-action {
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.audit-summary {
+  color: var(--ink);
+}
+
+.audit-meta,
+.audit-empty {
+  color: var(--ink-faint);
+  font-size: 0.88rem;
+}
+
 .sr-only {
   position: absolute;
   width: 1px;

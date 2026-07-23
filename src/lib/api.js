@@ -31,3 +31,7 @@ export function publish({ proposal, signature }) {
 export function fetchContent() {
   return request('/api/content')
 }
+
+export function fetchAudit(limit = 20) {
+  return request(`/api/audit?limit=${limit}`)
+}

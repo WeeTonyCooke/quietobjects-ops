@@ -9,10 +9,16 @@ export default function ConfirmCard({ pending, busy, onConfirm, onDiscard }) {
             <li key={line}>{line}</li>
           ))}
         </ul>
+        {pending.toolTrace?.length ? (
+          <p className="confirm-note">
+            Tools:{' '}
+            {pending.toolTrace.map((row) => row.name).join(' → ')}
+          </p>
+        ) : null}
         <p className="confirm-note">
-          Writes only <code>content/programme.json</code> and{' '}
-          <code>content/menu.json</code> on WeeTonyCooke/rosatos. Nothing goes live
-          until you confirm.
+          Publishes via GitHub Contents API into{' '}
+          <code>content/programme.json</code> / <code>content/menu.json</code>{' '}
+          on WeeTonyCooke/rosatos. Nothing writes until you confirm.
         </p>
       </div>
       <div className="confirm-actions">

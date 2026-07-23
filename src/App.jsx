@@ -6,12 +6,14 @@ import {
   logout,
   onAuthChange,
 } from '@netlify/identity'
-import { chat, fetchContent, publish } from './lib/api.js'
+import { chat, fetchAudit, fetchContent, publish } from './lib/api.js'
 import AuthGate from './components/AuthGate.jsx'
 import ChatThread from './components/ChatThread.jsx'
 import ConfirmCard from './components/ConfirmCard.jsx'
+import AuditLog from './components/AuditLog.jsx'
 
 const SUGGESTIONS = [
+  'list programme',
   'Steak Burger is 17.50',
   'Saturday is Seán Óg at 22:00',
   'Tonight override is Quiz night · 22:00',
@@ -27,12 +29,13 @@ export default function App() {
     {
       id: 'welcome',
       role: 'assistant',
-      text: 'Keep the week honest. Tell me a menu price or this week’s act — I’ll stage it, you confirm, then it publishes into Rosato’s content JSON.',
+      text: 'Rosato’s Phase 1 ops. Claude can list the programme, update an event, change a menu price, or set tonight’s override — then you confirm before anything publishes.',
     },
   ])
   const [pending, setPending] = useState(null)
   const [contentMeta, setContentMeta] = useState(null)
   const [lastPublish, setLastPublish] = useState(null)
+  const [auditEntries, setAuditEntries] = useState([])
   const inputRef = useRef(null)
 
   useEffect(() => {
@@ -56,20 +59,22 @@ export default function App() {
     }
   }, [])
 
+  async function refreshMeta() {
+    try {
+      const [content, audit] = await Promise.all([
+        fetchContent().catch(() => null),
+        fetchAudit(12).catch(() => ({ entries: [] })),
+      ])
+      if (content) setContentMeta({ repo: content.repo, branch: content.branch })
+      setAuditEntries(audit?.entries || [])
+    } catch {
+      // Best-effort until token / blobs are configured.
+    }
+  }
+
   useEffect(() => {
     if (!user && import.meta.env.VITE_OPS_AUTH_BYPASS !== '1') return
-    let alive = true
-    ;(async () => {
-      try {
-        const data = await fetchContent()
-        if (alive) setContentMeta({ repo: data.repo, branch: data.branch })
-      } catch {
-        // Content load is best-effort until GitHub token is configured.
-      }
-    })()
-    return () => {
-      alive = false
-    }
+    refreshMeta()
   }, [user])
 
   async function handleLogin({ email, password }) {
@@ -104,15 +109,19 @@ export default function App() {
       const result = await chat(message)
       pushMessage({
         role: 'assistant',
-        text: result.reply || result.summary,
+        text: result.reply || result.summary || 'Staged.',
         meta: result.source,
       })
-      setPending({
-        proposal: result.proposal,
-        signature: result.signature,
-        descriptions: result.descriptions,
-        summary: result.summary,
-      })
+      if (result.staged) {
+        setPending({
+          proposal: result.proposal,
+          signature: result.signature,
+          descriptions: result.descriptions,
+          summary: result.summary,
+          toolTrace: result.toolTrace,
+        })
+      }
+      refreshMeta()
     } catch (error) {
       pushMessage({
         role: 'assistant',
@@ -137,9 +146,10 @@ export default function App() {
       setPending(null)
       pushMessage({
         role: 'assistant',
-        text: `Published to ${result.commit.repo}@${result.commit.branch}.\n${result.summary}`,
+        text: `Published to ${result.commit.repo}@${result.commit.branch} via GitHub Contents API.\n${result.summary}`,
         meta: 'published',
       })
+      refreshMeta()
     } catch (error) {
       pushMessage({
         role: 'assistant',
@@ -177,7 +187,8 @@ export default function App() {
           <p className="eyebrow">Quiet Objects</p>
           <h1>Rosato’s ops</h1>
           <p className="lede">
-            Confirm-then-publish into programme + menu JSON. Venue chrome stays ours.
+            Claude tools stage programme + menu changes. You confirm, then we
+            publish into Rosato’s content JSON.
           </p>
         </div>
         <div className="top-meta">
@@ -253,10 +264,12 @@ export default function App() {
           <p className="publish-note">
             Last publish:{' '}
             <a href={lastPublish.commit.url} target="_blank" rel="noreferrer">
-              {lastPublish.commit.sha.slice(0, 7)}
+              {(lastPublish.commit.sha || '').slice(0, 7) || 'commit'}
             </a>
           </p>
         ) : null}
+
+        <AuditLog entries={auditEntries} />
       </main>
     </div>
   )

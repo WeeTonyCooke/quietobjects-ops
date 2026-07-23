@@ -1,8 +1,9 @@
 import type { Config, Context } from '@netlify/functions'
 import { requireOpsUser, json, errorResponse } from './_shared/auth.mjs'
 import { EDITABLE_FILES } from './_shared/content.mjs'
-import { commitJsonFiles } from './_shared/github.mjs'
+import { putJsonFilesViaContentsApi } from './_shared/github.mjs'
 import { verifySignedProposal } from './_shared/proposals.mjs'
+import { appendAudit } from './_shared/audit.mjs'
 
 export default async (req: Request, _context: Context) => {
   if (req.method !== 'POST') {
@@ -18,7 +19,9 @@ export default async (req: Request, _context: Context) => {
     })
 
     if (proposal.venue !== 'rosatos') {
-      throw Object.assign(new Error('Unexpected venue in proposal'), { status: 400 })
+      throw Object.assign(new Error('Unexpected venue in proposal'), {
+        status: 400,
+      })
     }
 
     const files = proposal.files || {}
@@ -43,10 +46,22 @@ export default async (req: Request, _context: Context) => {
       `Chat: ${proposal.message}`,
     ].join('\n')
 
-    const result = await commitJsonFiles({
+    const result = await putJsonFilesViaContentsApi({
       files,
       message,
       previousMeta: proposal.baseMeta || {},
+    })
+
+    const audit = await appendAudit({
+      action: 'publish',
+      actor: user.email || user.id,
+      summary: proposal.summary,
+      message: proposal.message,
+      paths: result.paths,
+      commits: result.commits,
+      repo: result.repo,
+      branch: result.branch,
+      toolTrace: proposal.toolTrace || [],
     })
 
     return json({
@@ -55,6 +70,7 @@ export default async (req: Request, _context: Context) => {
       commit: result,
       summary: proposal.summary,
       paths: result.paths,
+      auditId: audit.id,
     })
   } catch (error) {
     return errorResponse(error, error.status || 500)

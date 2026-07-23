@@ -11,15 +11,19 @@ function secret() {
 export function signProposal(proposal) {
   const body = canonical(proposal)
   const signature = createHmac('sha256', secret()).update(body).digest('hex')
-  return { proposal, signature, expiresAt: proposal.expiresAt }
+  return { proposal, signature }
 }
 
 export function verifySignedProposal({ proposal, signature }) {
   if (!proposal || !signature) {
-    throw new Error('Missing proposal or signature')
+    throw Object.assign(new Error('Missing proposal or signature'), {
+      status: 400,
+    })
   }
   if (proposal.expiresAt && Date.parse(proposal.expiresAt) < Date.now()) {
-    throw new Error('Proposal expired — ask again in chat')
+    throw Object.assign(new Error('Proposal expired — ask again in chat'), {
+      status: 400,
+    })
   }
   const expected = createHmac('sha256', secret())
     .update(canonical(proposal))
@@ -27,7 +31,7 @@ export function verifySignedProposal({ proposal, signature }) {
   const a = Buffer.from(String(signature))
   const b = Buffer.from(expected)
   if (a.length !== b.length || !timingSafeEqual(a, b)) {
-    throw new Error('Proposal signature invalid')
+    throw Object.assign(new Error('Proposal signature invalid'), { status: 400 })
   }
   return proposal
 }

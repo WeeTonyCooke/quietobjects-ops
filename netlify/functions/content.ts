@@ -12,12 +12,12 @@ export default async (req: Request, _context: Context) => {
     await requireOpsUser()
     const { files, repo, branch } = await readJsonFiles(EDITABLE_FILES)
     const bundle = bundleFromFiles(files)
-    const { repo: configuredRepo, branch: configuredBranch } = contentConfig()
+    const configured = contentConfig()
 
     return json({
       ok: true,
-      repo: repo || configuredRepo,
-      branch: branch || configuredBranch,
+      repo: repo || configured.repo,
+      branch: branch || configured.branch,
       programme: bundle.programme,
       menu: bundle.menu,
     })

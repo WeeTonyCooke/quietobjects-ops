@@ -16,10 +16,10 @@ async function request(path, options = {}) {
   return data
 }
 
-export function chat(message, history = [], attachmentId = null) {
+export function chat(message, history = [], attachmentId = null, venue = 'rosatos') {
   return request('/api/chat', {
     method: 'POST',
-    body: JSON.stringify({ message, history, attachmentId }),
+    body: JSON.stringify({ message, history, attachmentId, venue }),
   })
 }
 
@@ -30,8 +30,8 @@ export function publish({ proposal, signature }) {
   })
 }
 
-export function fetchContent() {
-  return request('/api/content')
+export function fetchContent(venue = 'rosatos') {
+  return request(`/api/content?venue=${encodeURIComponent(venue)}`)
 }
 
 export function fetchAudit(limit = 20) {

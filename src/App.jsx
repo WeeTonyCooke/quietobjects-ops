@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import {
+  acceptInvite,
   getUser,
   handleAuthCallback,
   login,
   logout,
   onAuthChange,
+  updateUser,
 } from '@netlify/identity'
 import {
   chat,
@@ -28,6 +30,8 @@ const SUGGESTIONS = [
 export default function App() {
   const [user, setUser] = useState(null)
   const [authReady, setAuthReady] = useState(false)
+  const [authMode, setAuthMode] = useState('login')
+  const [inviteToken, setInviteToken] = useState(null)
   const [authError, setAuthError] = useState('')
   const [busy, setBusy] = useState(false)
   const [draft, setDraft] = useState('')
@@ -50,11 +54,26 @@ export default function App() {
     let alive = true
     ;(async () => {
       try {
-        await handleAuthCallback()
-        const current = await getUser()
-        if (alive) setUser(current)
-      } catch {
-        if (alive) setUser(null)
+        const callback = await handleAuthCallback()
+        if (!alive) return
+
+        if (callback?.type === 'invite' && callback.token) {
+          setInviteToken(callback.token)
+          setAuthMode('invite')
+          setUser(null)
+        } else if (callback?.type === 'recovery') {
+          setAuthMode('recovery')
+          setUser(callback.user || (await getUser()))
+        } else {
+          const current = await getUser()
+          setUser(current)
+          setAuthMode('login')
+        }
+      } catch (error) {
+        if (alive) {
+          setUser(null)
+          setAuthError(error.message || 'Could not process sign-in link')
+        }
       } finally {
         if (alive) setAuthReady(true)
       }
@@ -90,8 +109,38 @@ export default function App() {
     try {
       const next = await login(email, password)
       setUser(next)
+      setAuthMode('login')
     } catch (error) {
       setAuthError(error.message || 'Could not sign in')
+    }
+  }
+
+  async function handleAcceptInvite({ password }) {
+    setAuthError('')
+    if (!inviteToken) {
+      setAuthError('Invite link is missing or expired. Request a new invite.')
+      return
+    }
+    try {
+      const next = await acceptInvite(inviteToken, password)
+      setUser(next)
+      setInviteToken(null)
+      setAuthMode('login')
+      window.history.replaceState({}, document.title, window.location.pathname)
+    } catch (error) {
+      setAuthError(error.message || 'Could not accept invite')
+    }
+  }
+
+  async function handleResetPassword({ password }) {
+    setAuthError('')
+    try {
+      const next = await updateUser({ password })
+      setUser(next)
+      setAuthMode('login')
+      window.history.replaceState({}, document.title, window.location.pathname)
+    } catch (error) {
+      setAuthError(error.message || 'Could not update password')
     }
   }
 
@@ -99,6 +148,7 @@ export default function App() {
     await logout()
     setUser(null)
     setPending(null)
+    setAuthMode('login')
   }
 
   function pushMessage(message) {
@@ -217,15 +267,25 @@ export default function App() {
   }
 
   const bypass = import.meta.env.VITE_OPS_AUTH_BYPASS === '1'
-  const signedIn = Boolean(user) || bypass
+  const signedIn = Boolean(user) && authMode !== 'recovery'
+  const showGate =
+    !bypass && (!signedIn || authMode === 'invite' || authMode === 'recovery')
   const canStage = Boolean(draft.trim() || attachment)
 
   if (!authReady) {
     return <div className="boot">Loading Quiet Objects ops…</div>
   }
 
-  if (!signedIn) {
-    return <AuthGate onLogin={handleLogin} error={authError} />
+  if (showGate) {
+    return (
+      <AuthGate
+        mode={authMode}
+        onLogin={handleLogin}
+        onAcceptInvite={handleAcceptInvite}
+        onResetPassword={handleResetPassword}
+        error={authError}
+      />
+    )
   }
 
   return (

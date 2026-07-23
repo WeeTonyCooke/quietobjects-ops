@@ -421,3 +421,38 @@ a {
     transition: none !important;
   }
 }
+
+/* ── Venue switcher ─────────────────────────────────────── */
+.venue-switcher {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 0.25rem;
+}
+
+.venue-btn {
+  background: transparent;
+  border: 1px solid var(--border, #d0d0d0);
+  border-radius: 4px;
+  color: var(--text-muted, #666);
+  cursor: pointer;
+  font-size: 0.75rem;
+  padding: 0.2rem 0.6rem;
+  transition: background 0.15s, color 0.15s;
+}
+
+.venue-btn:hover:not(:disabled) {
+  background: var(--surface-hover, #f0f0f0);
+  color: var(--text, #111);
+}
+
+.venue-btn.active {
+  background: var(--accent, #1a1a1a);
+  border-color: var(--accent, #1a1a1a);
+  color: #fff;
+  font-weight: 600;
+}
+
+.venue-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

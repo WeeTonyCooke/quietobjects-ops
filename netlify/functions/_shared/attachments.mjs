@@ -48,11 +48,15 @@ export async function loadAttachment(id) {
 
 /**
  * Extract plain text from a PDF buffer for menu-update staging.
+ * unpdf rejects Node Buffer even though Buffer extends Uint8Array — copy first.
  */
 export async function extractPdfText(buffer) {
   try {
-    const data = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer)
-    const result = await extractText(data)
+    const bytes =
+      buffer instanceof ArrayBuffer
+        ? new Uint8Array(buffer)
+        : Uint8Array.from(buffer)
+    const result = await extractText(bytes)
     const text = Array.isArray(result.text)
       ? result.text.join('\n')
       : String(result.text || result || '')

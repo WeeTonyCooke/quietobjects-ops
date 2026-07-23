@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { filesFromBundle } from './content.mjs'
-import { createToolSession, CLAUDE_TOOLS } from './tools.mjs'
+import { createToolSession, OPS_TOOLS } from './tools.mjs'
 import { runDeterministicOpsChat } from './fallback.mjs'
 import { signProposal, verifySignedProposal } from './proposals.mjs'
 
@@ -39,9 +39,9 @@ const sampleBundle = {
   },
 }
 
-test('exposes the four Claude tools', () => {
+test('exposes the four ops tools', () => {
   assert.deepEqual(
-    CLAUDE_TOOLS.map((tool) => tool.name).sort(),
+    OPS_TOOLS.map((tool) => tool.name).sort(),
     [
       'list_programme',
       'set_tonight_override',

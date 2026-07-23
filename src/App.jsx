@@ -29,7 +29,7 @@ export default function App() {
     {
       id: 'welcome',
       role: 'assistant',
-      text: 'Rosato’s Phase 1 ops. Claude can list the programme, update an event, change a menu price, or set tonight’s override — then you confirm before anything publishes.',
+      text: 'Rosato’s Phase 1 ops. Chat can list the programme, update an event, change a menu price, or set tonight’s override — then you confirm before anything publishes.',
     },
   ])
   const [pending, setPending] = useState(null)
@@ -187,8 +187,8 @@ export default function App() {
           <p className="eyebrow">Quiet Objects</p>
           <h1>Rosato’s ops</h1>
           <p className="lede">
-            Claude tools stage programme + menu changes. You confirm, then we
-            publish into Rosato’s content JSON.
+            Chat stages programme + menu changes. You confirm, then we publish
+            into Rosato’s content JSON.
           </p>
         </div>
         <div className="top-meta">

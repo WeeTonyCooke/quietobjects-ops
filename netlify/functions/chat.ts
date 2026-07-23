@@ -6,7 +6,7 @@ import {
   filesFromBundle,
 } from './_shared/content.mjs'
 import { readJsonFiles } from './_shared/github.mjs'
-import { runClaudeOpsChat } from './_shared/claude.mjs'
+import { runOpsChat } from './_shared/agent.mjs'
 import { runDeterministicOpsChat } from './_shared/fallback.mjs'
 import { signProposal } from './_shared/proposals.mjs'
 import { appendAudit } from './_shared/audit.mjs'
@@ -25,14 +25,15 @@ export default async (req: Request, _context: Context) => {
     const bundle = bundleFromFiles(files)
 
     let result
-    let source = 'claude-tools'
+    let source = 'ai-tools'
     try {
-      result = await runClaudeOpsChat({ message, bundle })
+      result = await runOpsChat({ message, bundle })
+      source = `${result.provider}:${result.model}`
     } catch (error) {
       // Gateway / key unavailable in fresh local envs — same tools via fallback.
       result = await runDeterministicOpsChat({ message, bundle })
       source = 'deterministic-tools'
-      result.reply = `${result.reply}\n\n(Claude gateway unavailable: ${error.message})`
+      result.reply = `${result.reply}\n\n(AI gateway unavailable: ${error.message})`
     }
 
     if (!result.hasChanges) {
@@ -42,6 +43,7 @@ export default async (req: Request, _context: Context) => {
         summary: 'No content changes staged',
         message: String(message || ''),
         toolTrace: result.toolTrace,
+        source,
       })
       return json({
         ok: true,
@@ -72,6 +74,7 @@ export default async (req: Request, _context: Context) => {
         Object.keys(proposalFiles).map((path) => [path, meta[path]]),
       ),
       requestedBy: user.email || user.id,
+      source,
     }
 
     const signed = signProposal(proposal)
@@ -83,6 +86,7 @@ export default async (req: Request, _context: Context) => {
       message: proposal.message,
       paths: Object.keys(proposalFiles),
       toolTrace: result.toolTrace,
+      source,
     })
 
     return json({

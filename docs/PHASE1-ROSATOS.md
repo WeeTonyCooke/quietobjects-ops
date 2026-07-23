@@ -2,7 +2,7 @@
 
 Admin chat + Netlify Functions for day-to-day Rosato’s content updates.
 
-## Claude tools
+## Ops tools
 
 | Tool | Purpose |
 |---|---|
@@ -13,11 +13,15 @@ Admin chat + Netlify Functions for day-to-day Rosato’s content updates.
 
 Mutations apply in memory only. Publish requires a second, explicit confirm.
 
+## Model policy
+
+Provider-agnostic tooling with a **cheap default** (`gpt-4o-mini` on Netlify AI Gateway). Override with `OPS_AI_MODEL` / `OPS_AI_PROVIDER`. Do not hard-wire the product to Claude or any single vendor.
+
 ## Endpoints
 
 | Method | Path | Role |
 |---|---|---|
-| `POST` | `/api/chat` | Claude tool loop → signed proposal |
+| `POST` | `/api/chat` | AI tool loop → signed proposal |
 | `POST` | `/api/publish` | Verify proposal → GitHub Contents API writes |
 | `GET` | `/api/content` | Read current programme + menu |
 | `GET` | `/api/audit` | Recent stage/publish audit entries |

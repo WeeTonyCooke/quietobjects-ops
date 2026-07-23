@@ -1,13 +1,13 @@
 # Quiet Objects ops
 
-Back-end ops for Quiet Objects venues. **Phase 1** pilots Rosato’s with an admin chat that stages content changes through Claude tools and only writes after an explicit confirm.
+Back-end ops for Quiet Objects venues. **Phase 1** pilots Rosato’s with an admin chat that stages content changes through cheap, swappable AI tools and only writes after an explicit confirm.
 
 ## Phase 1 — Rosato’s pilot
 
 | Piece | Detail |
 |---|---|
 | UI | Admin chat at `/` |
-| Claude tools | `list_programme`, `update_programme_event`, `update_menu_price`, `set_tonight_override` |
+| Ops tools | `list_programme`, `update_programme_event`, `update_menu_price`, `set_tonight_override` |
 | Stage | `POST /api/chat` — tool loop, signed proposal, **no write** |
 | Publish | `POST /api/publish` — confirm → **GitHub Contents API** |
 | Target | `WeeTonyCooke/rosatos` → `content/programme.json`, `content/menu.json` |
@@ -15,13 +15,24 @@ Back-end ops for Quiet Objects venues. **Phase 1** pilots Rosato’s with an adm
 
 `venue.json` is never written.
 
+## AI (low-cost, swappable)
+
+Not tied to Claude. Default is **`gpt-4o-mini`** via Netlify AI Gateway (OpenAI SDK). Change with env:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `OPS_AI_PROVIDER` | `openai` | Gateway provider path (Phase 1: `openai`) |
+| `OPS_AI_MODEL` | `gpt-4o-mini` | Any gateway chat model that supports tools |
+
+The durable contract is the **ops tools + confirm-then-publish**, not a vendor model.
+
 ## Flow
 
 1. Manager chats (“Steak Burger is 17.50”, “Saturday is Seán Óg at 22:00”).
-2. Claude (Netlify AI Gateway) calls tools against an in-memory copy of programme/menu.
+2. The configured model calls ops tools against an in-memory copy of programme/menu.
 3. Ops returns a signed proposal + summary. UI asks for confirm.
-4. Confirm publishes with the GitHub **Contents API** (`PUT /repos/.../contents/...`).
-5. Audit log records `stage` and `publish` (and no-op `chat` looks).
+4. Confirm publishes with the GitHub **Contents API**.
+5. Audit log records `stage` / `publish` (and no-op chats).
 
 If the AI Gateway is unavailable locally, the same four tools run through a deterministic phrase router.
 
@@ -40,16 +51,17 @@ Copy `.env.example` and set:
 | `CONTENT_REPO` | default `WeeTonyCooke/rosatos` |
 | `CONTENT_BRANCH` | default `main` |
 | `PROPOSAL_SIGNING_SECRET` | HMAC secret for confirm tokens |
-| `OPS_AUTH_BYPASS` / `VITE_OPS_AUTH_BYPASS` | `1` for local only — never in production |
-
-Claude uses `@anthropic-ai/sdk` with gateway-injected `ANTHROPIC_BASE_URL` / `ANTHROPIC_API_KEY` after the site has AI enabled and at least one production deploy.
+| `OPS_AI_MODEL` | optional; default `gpt-4o-mini` |
+| `OPS_AUTH_BYPASS` / `VITE_OPS_AUTH_BYPASS` | `1` for local only — never leave on for real Identity |
 
 ## Netlify setup
 
 1. Connect this repo and deploy
-2. Enable **Identity** (invite only) and invite ops users
+2. Enable **Identity** (invite only) when ready; until then auth bypass is for scaffolding only
 3. Enable **AI Gateway**
-4. Set env vars above (no auth bypass)
+4. Set content token + signing secret
+
+Live pilot site: https://quietobjects-ops.netlify.app
 
 ## Scripts
 

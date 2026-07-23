@@ -7,14 +7,15 @@ import {
 } from './content.mjs'
 
 /**
- * Claude tool definitions for Rosato's Phase 1 ops.
+ * Provider-agnostic ops tool definitions for Rosato's Phase 1.
+ * Canonical shape uses JSON Schema in `parameters` (OpenAI tools format).
  */
-export const CLAUDE_TOOLS = [
+export const OPS_TOOLS = [
   {
     name: 'list_programme',
     description:
       'List the current weekly programme lineup and tonight override for Rosato’s.',
-    input_schema: {
+    parameters: {
       type: 'object',
       properties: {},
       additionalProperties: false,
@@ -24,7 +25,7 @@ export const CLAUDE_TOOLS = [
     name: 'update_programme_event',
     description:
       'Create or update a weekly programme event (music, quiz, poker, etc.) for a given day. Use action=remove to delete it.',
-    input_schema: {
+    parameters: {
       type: 'object',
       properties: {
         day: {
@@ -59,7 +60,7 @@ export const CLAUDE_TOOLS = [
   {
     name: 'update_menu_price',
     description: 'Update the price of an existing menu item by name.',
-    input_schema: {
+    parameters: {
       type: 'object',
       properties: {
         itemName: { type: 'string' },
@@ -77,7 +78,7 @@ export const CLAUDE_TOOLS = [
     name: 'set_tonight_override',
     description:
       'Set or clear the tonight override cue. Pass an empty string to clear.',
-    input_schema: {
+    parameters: {
       type: 'object',
       properties: {
         value: {
@@ -91,8 +92,20 @@ export const CLAUDE_TOOLS = [
   },
 ]
 
+/** OpenAI chat-completions tools payload */
+export function openaiTools() {
+  return OPS_TOOLS.map((tool) => ({
+    type: 'function',
+    function: {
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.parameters,
+    },
+  }))
+}
+
 /**
- * Mutable session that Claude tools operate on.
+ * Mutable session that ops tools operate on.
  */
 export function createToolSession(bundle) {
   const state = {

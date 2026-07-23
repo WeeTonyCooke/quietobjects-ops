@@ -2,7 +2,7 @@ import { createToolSession } from './tools.mjs'
 import { dayFromLabel, DAY_LABELS } from './content.mjs'
 
 /**
- * Offline / gateway-down path that exercises the same Claude tools.
+ * Offline / gateway-down path that exercises the same ops tools.
  */
 export async function runDeterministicOpsChat({ message, bundle }) {
   const text = String(message || '').trim()

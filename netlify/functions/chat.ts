@@ -10,6 +10,7 @@ import { runOpsChat } from './_shared/agent.mjs'
 import { runDeterministicOpsChat } from './_shared/fallback.mjs'
 import { signProposal } from './_shared/proposals.mjs'
 import { appendAudit } from './_shared/audit.mjs'
+import { loadAttachment } from './_shared/attachments.mjs'
 
 export default async (req: Request, _context: Context) => {
   if (req.method !== 'POST') {
@@ -21,6 +22,13 @@ export default async (req: Request, _context: Context) => {
     const body = await req.json()
     const message = body?.message
     const history = Array.isArray(body?.history) ? body.history : []
+    const attachmentId = body?.attachmentId || null
+    const attachment = attachmentId ? await loadAttachment(attachmentId) : null
+    if (attachmentId && !attachment) {
+      throw Object.assign(new Error('Attachment not found — upload again'), {
+        status: 404,
+      })
+    }
 
     const { files, meta, repo, branch } = await readJsonFiles(EDITABLE_FILES)
     const bundle = bundleFromFiles(files)
@@ -29,16 +37,20 @@ export default async (req: Request, _context: Context) => {
     let source = 'ai-tools'
 
     // Clear actionable phrases go through the same tools without waiting on the model.
-    const deterministic = await runDeterministicOpsChat({ message, bundle })
-    if (deterministic.hasChanges) {
+    // Skip deterministic shortcut when a PDF attachment is driving the update.
+    const deterministic = attachment
+      ? null
+      : await runDeterministicOpsChat({ message, bundle })
+    if (deterministic?.hasChanges) {
       result = deterministic
       source = 'deterministic-tools'
     } else {
       try {
-        result = await runOpsChat({ message, bundle, history })
+        result = await runOpsChat({ message, bundle, history, attachment })
         source = `${result.provider}:${result.model}`
       } catch (error) {
-        result = deterministic
+        if (attachment) throw error
+        result = deterministic || (await runDeterministicOpsChat({ message, bundle }))
         source = 'deterministic-tools'
         result.reply = `${result.reply}\n\n(AI gateway unavailable: ${error.message})`
       }
@@ -73,10 +85,12 @@ export default async (req: Request, _context: Context) => {
       branch,
       createdAt: new Date().toISOString(),
       expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
-      message: String(message),
+      message: String(message || (attachment ? `PDF: ${attachment.name}` : '')),
       summary: result.descriptions.join(' · '),
       descriptions: result.descriptions,
       toolTrace: result.toolTrace,
+      attachmentId: attachment?.id || null,
+      attachmentName: attachment?.name || null,
       files: proposalFiles,
       baseMeta: Object.fromEntries(
         Object.keys(proposalFiles).map((path) => [path, meta[path]]),
@@ -107,6 +121,7 @@ export default async (req: Request, _context: Context) => {
       toolTrace: result.toolTrace,
       proposal: signed.proposal,
       signature: signed.signature,
+      attachmentName: attachment?.name || null,
     })
   } catch (error) {
     return errorResponse(error, error.status || 500)

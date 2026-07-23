@@ -28,11 +28,11 @@ The durable contract is the **ops tools + confirm-then-publish**, not a vendor m
 
 ## Flow
 
-1. Manager chats (“Steak Burger is 17.50”, “Saturday is Seán Óg at 22:00”).
-2. The configured model calls ops tools against an in-memory copy of programme/menu.
-3. Ops returns a signed proposal + summary. UI asks for confirm.
+1. Manager chats (“Steak Burger is 17.50”) or attaches a PDF menu.
+2. Tools stage programme/menu changes in memory.
+3. UI shows **Confirm**. Nothing writes until then.
 4. Confirm publishes with the GitHub **Contents API**.
-5. Audit log records `stage` / `publish` (and no-op chats).
+5. Audit log records attach / stage / publish.
 
 If the AI Gateway is unavailable locally, the same four tools run through a deterministic phrase router.
 

@@ -6,7 +6,13 @@ import {
   logout,
   onAuthChange,
 } from '@netlify/identity'
-import { chat, fetchAudit, fetchContent, publish } from './lib/api.js'
+import {
+  chat,
+  fetchAudit,
+  fetchContent,
+  publish,
+  uploadAttachment,
+} from './lib/api.js'
 import AuthGate from './components/AuthGate.jsx'
 import ChatThread from './components/ChatThread.jsx'
 import ConfirmCard from './components/ConfirmCard.jsx'
@@ -25,11 +31,12 @@ export default function App() {
   const [authError, setAuthError] = useState('')
   const [busy, setBusy] = useState(false)
   const [draft, setDraft] = useState('')
+  const [attachment, setAttachment] = useState(null)
   const [messages, setMessages] = useState([
     {
       id: 'welcome',
       role: 'assistant',
-      text: 'Rosato’s Phase 1 ops. Chat can list the programme, update an event, change a menu price, or set tonight’s override — then you confirm before anything publishes.',
+      text: 'Rosato’s Phase 1 ops. Type a change, or attach a PDF menu update — then press Confirm before anything publishes.',
     },
   ])
   const [pending, setPending] = useState(null)
@@ -37,6 +44,7 @@ export default function App() {
   const [lastPublish, setLastPublish] = useState(null)
   const [auditEntries, setAuditEntries] = useState([])
   const inputRef = useRef(null)
+  const fileRef = useRef(null)
 
   useEffect(() => {
     let alive = true
@@ -97,9 +105,34 @@ export default function App() {
     setMessages((prev) => [...prev, { id: crypto.randomUUID(), ...message }])
   }
 
+  async function handleFileChange(event) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file || busy) return
+    setBusy(true)
+    try {
+      const result = await uploadAttachment(file)
+      setAttachment(result.attachment)
+      pushMessage({
+        role: 'assistant',
+        text: `Attached ${result.attachment.name} (${result.attachment.extractedChars} characters read). Add a note if you want, then Stage.`,
+        meta: 'attachment',
+      })
+    } catch (error) {
+      pushMessage({
+        role: 'assistant',
+        text: error.message || 'Could not attach PDF',
+        tone: 'error',
+      })
+    } finally {
+      setBusy(false)
+      inputRef.current?.focus()
+    }
+  }
+
   async function submitMessage(text) {
     const message = text.trim()
-    if (!message || busy) return
+    if ((!message && !attachment) || busy) return
     setBusy(true)
     setDraft('')
     setPending(null)
@@ -109,10 +142,16 @@ export default function App() {
       .filter((row) => row.id !== 'welcome')
       .map((row) => ({ role: row.role, content: row.text }))
 
-    pushMessage({ role: 'user', text: message })
+    const userLine = message
+      ? attachment
+        ? `${message}\n(with ${attachment.name})`
+        : message
+      : `Update menu from attached PDF: ${attachment.name}`
+
+    pushMessage({ role: 'user', text: userLine })
 
     try {
-      const result = await chat(message, history)
+      const result = await chat(message, history, attachment?.id || null)
       pushMessage({
         role: 'assistant',
         text: result.reply || result.summary || 'Staged.',
@@ -125,7 +164,9 @@ export default function App() {
           descriptions: result.descriptions,
           summary: result.summary,
           toolTrace: result.toolTrace,
+          attachmentName: result.attachmentName || attachment?.name,
         })
+        setAttachment(null)
       }
       refreshMeta()
     } catch (error) {
@@ -152,7 +193,7 @@ export default function App() {
       setPending(null)
       pushMessage({
         role: 'assistant',
-        text: `Published to ${result.commit.repo}@${result.commit.branch} via GitHub Contents API.\n${result.summary}`,
+        text: `Published to ${result.commit.repo}@${result.commit.branch}.\n${result.summary}`,
         meta: 'published',
       })
       refreshMeta()
@@ -177,6 +218,7 @@ export default function App() {
 
   const bypass = import.meta.env.VITE_OPS_AUTH_BYPASS === '1'
   const signedIn = Boolean(user) || bypass
+  const canStage = Boolean(draft.trim() || attachment)
 
   if (!authReady) {
     return <div className="boot">Loading Quiet Objects ops…</div>
@@ -193,8 +235,8 @@ export default function App() {
           <p className="eyebrow">Quiet Objects</p>
           <h1>Rosato’s ops</h1>
           <p className="lede">
-            Chat stages programme + menu changes. You confirm, then we publish
-            into Rosato’s content JSON.
+            Stage programme or menu changes from chat or a PDF. Confirm before
+            anything publishes.
           </p>
         </div>
         <div className="top-meta">
@@ -237,7 +279,7 @@ export default function App() {
             rows={2}
             value={draft}
             disabled={busy}
-            placeholder="e.g. Steak Burger is 17.50"
+            placeholder="e.g. Steak Burger is 17.50 — or attach a PDF menu"
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === 'Enter' && !event.shiftKey) {
@@ -246,21 +288,53 @@ export default function App() {
               }
             }}
           />
-          <div className="composer-row">
-            <div className="suggestions">
-              {SUGGESTIONS.map((item) => (
-                <button
-                  key={item}
-                  type="button"
-                  className="chip"
-                  disabled={busy}
-                  onClick={() => submitMessage(item)}
-                >
-                  {item}
-                </button>
-              ))}
+
+          {attachment ? (
+            <div className="attachment-chip">
+              <span>{attachment.name}</span>
+              <button
+                type="button"
+                className="ghost"
+                disabled={busy}
+                onClick={() => setAttachment(null)}
+              >
+                Remove
+              </button>
             </div>
-            <button type="submit" className="primary" disabled={busy || !draft.trim()}>
+          ) : null}
+
+          <div className="composer-row">
+            <div className="composer-left">
+              <input
+                ref={fileRef}
+                type="file"
+                accept="application/pdf,.pdf"
+                className="sr-only"
+                onChange={handleFileChange}
+              />
+              <button
+                type="button"
+                className="ghost"
+                disabled={busy}
+                onClick={() => fileRef.current?.click()}
+              >
+                Attach PDF
+              </button>
+              <div className="suggestions">
+                {SUGGESTIONS.map((item) => (
+                  <button
+                    key={item}
+                    type="button"
+                    className="chip"
+                    disabled={busy}
+                    onClick={() => submitMessage(item)}
+                  >
+                    {item}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <button type="submit" className="primary" disabled={busy || !canStage}>
               {busy ? 'Working…' : 'Stage'}
             </button>
           </div>

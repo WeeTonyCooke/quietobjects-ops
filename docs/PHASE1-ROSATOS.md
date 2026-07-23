@@ -11,7 +11,11 @@ Admin chat + Netlify Functions for day-to-day Rosato’s content updates.
 | `update_menu_price` | Change an existing menu item price |
 | `set_tonight_override` | Set or clear tonight’s cue |
 
-Mutations apply in memory only. Publish requires a second, explicit confirm.
+Mutations apply in memory only. The UI shows a **Confirm** button before publish.
+
+## Attachments
+
+PDF menu uploads via `POST /api/attach` (stored in Netlify Blobs). Extracted text feeds the chat tool loop so price/item updates can be staged, then confirmed.
 
 ## Model policy
 
@@ -21,7 +25,8 @@ Provider-agnostic tooling with a **cheap default** (`gpt-4o-mini` on Netlify AI 
 
 | Method | Path | Role |
 |---|---|---|
-| `POST` | `/api/chat` | AI tool loop → signed proposal |
+| `POST` | `/api/chat` | AI/deterministic tool loop → signed proposal |
+| `POST` | `/api/attach` | Upload PDF menu attachment |
 | `POST` | `/api/publish` | Verify proposal → GitHub Contents API writes |
 | `GET` | `/api/content` | Read current programme + menu |
 | `GET` | `/api/audit` | Recent stage/publish audit entries |

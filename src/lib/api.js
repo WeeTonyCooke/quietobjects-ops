@@ -1,7 +1,9 @@
 async function request(path, options = {}) {
   const response = await fetch(path, {
     headers: {
-      'Content-Type': 'application/json',
+      ...(options.body instanceof FormData
+        ? {}
+        : { 'Content-Type': 'application/json' }),
       ...(options.headers || {}),
     },
     ...options,
@@ -14,10 +16,10 @@ async function request(path, options = {}) {
   return data
 }
 
-export function chat(message, history = []) {
+export function chat(message, history = [], attachmentId = null) {
   return request('/api/chat', {
     method: 'POST',
-    body: JSON.stringify({ message, history }),
+    body: JSON.stringify({ message, history, attachmentId }),
   })
 }
 
@@ -34,4 +36,13 @@ export function fetchContent() {
 
 export function fetchAudit(limit = 20) {
   return request(`/api/audit?limit=${limit}`)
+}
+
+export function uploadAttachment(file) {
+  const body = new FormData()
+  body.append('file', file)
+  return request('/api/attach', {
+    method: 'POST',
+    body,
+  })
 }

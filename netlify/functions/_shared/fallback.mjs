@@ -97,7 +97,7 @@ function finish(session, reply) {
         ? [
             'Staged — nothing is live yet.',
             ...session.state.descriptions.map((line) => `• ${line}`),
-            'Use Confirm & publish below to write into Rosato’s content JSON.',
+            'Press Confirm to publish into Rosato’s content JSON.',
           ].join('\n')
         : 'No changes staged.'),
     descriptions: session.state.descriptions,

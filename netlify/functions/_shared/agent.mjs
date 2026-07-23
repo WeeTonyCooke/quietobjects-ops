@@ -25,9 +25,15 @@ export function resolveAiConfig() {
  * Run an ops tool-use loop against Rosato's content.
  * Mutations stay in-memory until /api/publish confirms.
  */
-export async function runOpsChat({ message, bundle, history = [] }) {
+export async function runOpsChat({
+  message,
+  bundle,
+  history = [],
+  attachment = null,
+}) {
   const trimmed = String(message || '').trim()
-  if (!trimmed) {
+  const hasAttachment = Boolean(attachment?.extractedText)
+  if (!trimmed && !hasAttachment) {
     throw Object.assign(new Error('Message is empty'), { status: 400 })
   }
 
@@ -44,10 +50,11 @@ export async function runOpsChat({ message, bundle, history = [] }) {
   const session = createToolSession(bundle)
   const client = new OpenAI()
   const prior = normalizeHistory(history)
+  const userContent = buildUserContent(trimmed, attachment)
   const messages = [
     { role: 'system', content: SYSTEM_PROMPT },
     ...prior,
-    { role: 'user', content: trimmed },
+    { role: 'user', content: userContent },
   ]
 
   let finalText = ''
@@ -101,7 +108,7 @@ export async function runOpsChat({ message, bundle, history = [] }) {
     finalText = [
       'Staged — nothing is live yet.',
       ...session.state.descriptions.map((line) => `• ${line}`),
-      'Use Confirm & publish below to write into Rosato’s content JSON.',
+      'Press Confirm to publish into Rosato’s content JSON.',
     ].join('\n')
   } else if (!finalText) {
     finalText =
@@ -140,10 +147,26 @@ function normalizeHistory(history) {
     }))
 }
 
+function buildUserContent(message, attachment) {
+  const parts = []
+  if (message) parts.push(message)
+  if (attachment?.extractedText) {
+    parts.push(
+      [
+        `Attached PDF: ${attachment.name || 'menu.pdf'}`,
+        'Extracted text follows. Use update_menu_price (and related tools) for clear price/item changes found in it. Prefer exact existing menu item names.',
+        '--- PDF TEXT ---',
+        attachment.extractedText.slice(0, 12000),
+      ].join('\n'),
+    )
+  }
+  return parts.join('\n\n')
+}
+
 const SYSTEM_PROMPT = `You are Quiet Objects ops for Rosato’s (Moville, Ireland).
 Currency is euro (€), never pounds.
 
-Your job: call tools to stage programme/menu updates. The web UI has a separate Confirm & publish button — you must NOT ask the human to type “confirm” in chat.
+Your job: call tools to stage programme/menu updates. The web UI has a Confirm button — you must NOT ask the human to type “confirm” in chat.
 
 Tools:
 - list_programme — inspect this week’s lineup / tonight override
@@ -153,8 +176,10 @@ Tools:
 
 Rules:
 - When the request is clear (e.g. “Steak Burger is 17.50”, “Saturday is Seán Óg at 22:00”), call the tool immediately. Do not ask permission first.
+- If a PDF menu attachment is present, extract concrete item/price updates and call update_menu_price for each clear match to the live menu.
 - If the human says “confirm”, “yes”, “do it”, or similar after you already proposed a change in chat history, call the matching tool now.
 - Never invent menu items. Match existing names when pricing.
 - Never touch venue chrome, booking, gift cards, colours, or layout.
-- After a successful tool mutation, keep the reply short — the UI will show Confirm & publish.
+- After a successful tool mutation, keep the reply short — the UI will show Confirm.
 - Only ask a clarifying question when the request is genuinely ambiguous and no tool can be called yet.`
+

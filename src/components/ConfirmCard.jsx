@@ -1,32 +1,33 @@
 export default function ConfirmCard({ pending, busy, onConfirm, onDiscard }) {
   return (
-    <section className="confirm" aria-label="Confirm publish">
+    <section className="confirm" aria-label="Confirm changes">
       <div>
-        <p className="eyebrow">Confirm before publish</p>
+        <p className="eyebrow">Ready to publish</p>
         <h2>{pending.summary}</h2>
         <ul>
           {(pending.descriptions || []).map((line) => (
             <li key={line}>{line}</li>
           ))}
         </ul>
-        {pending.toolTrace?.length ? (
-          <p className="confirm-note">
-            Tools:{' '}
-            {pending.toolTrace.map((row) => row.name).join(' → ')}
-          </p>
+        {pending.attachmentName ? (
+          <p className="confirm-note">From attachment: {pending.attachmentName}</p>
         ) : null}
         <p className="confirm-note">
-          Publishes via GitHub Contents API into{' '}
-          <code>content/programme.json</code> / <code>content/menu.json</code>{' '}
-          on WeeTonyCooke/rosatos. Nothing writes until you confirm.
+          Writes into Rosato’s <code>programme.json</code> / <code>menu.json</code>.
+          Nothing goes live until you confirm.
         </p>
       </div>
       <div className="confirm-actions">
         <button type="button" className="ghost" disabled={busy} onClick={onDiscard}>
           Discard
         </button>
-        <button type="button" className="primary" disabled={busy} onClick={onConfirm}>
-          {busy ? 'Publishing…' : 'Confirm & publish'}
+        <button
+          type="button"
+          className="primary confirm-primary"
+          disabled={busy}
+          onClick={onConfirm}
+        >
+          {busy ? 'Publishing…' : 'Confirm'}
         </button>
       </div>
     </section>

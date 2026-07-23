@@ -267,15 +267,25 @@ export default function App() {
   }
 
   const bypass = import.meta.env.VITE_OPS_AUTH_BYPASS === '1'
-  const signedIn = Boolean(user) || bypass
+  const signedIn = Boolean(user) && authMode !== 'recovery'
+  const showGate =
+    !bypass && (!signedIn || authMode === 'invite' || authMode === 'recovery')
   const canStage = Boolean(draft.trim() || attachment)
 
   if (!authReady) {
     return <div className="boot">Loading Quiet Objects ops…</div>
   }
 
-  if (!signedIn) {
-    return <AuthGate onLogin={handleLogin} error={authError} />
+  if (showGate) {
+    return (
+      <AuthGate
+        mode={authMode}
+        onLogin={handleLogin}
+        onAcceptInvite={handleAcceptInvite}
+        onResetPassword={handleResetPassword}
+        error={authError}
+      />
+    )
   }
 
   return (

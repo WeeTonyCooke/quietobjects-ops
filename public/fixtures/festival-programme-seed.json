@@ -1,0 +1,49 @@
+{
+  "year": 2027,
+  "note": "",
+  "days": [
+    {
+      "id": "wednesday",
+      "label": "Wednesday",
+      "events": [
+        {
+          "id": "fancy-dress-parade",
+          "name": "Fancy Dress Opening Parade",
+          "time": "19:00",
+          "venue": "Festival Square",
+          "kind": "parade",
+          "detail": "Fancy Dress Opening Parade at Festival Square"
+        }
+      ]
+    },
+    {
+      "id": "thursday",
+      "label": "Thursday",
+      "events": [
+        {
+          "id": "bed-push-race",
+          "name": "Bed Push Race",
+          "time": "19:00",
+          "venue": "Quay Street",
+          "kind": "race",
+          "detail": "Scrutineering 18:00 at Festival Square · Parade 18:30 to Quay Street · Race starts 19:00"
+        }
+      ]
+    },
+    {
+      "id": "friday",
+      "label": "Friday",
+      "events": []
+    },
+    {
+      "id": "saturday",
+      "label": "Saturday",
+      "events": []
+    },
+    {
+      "id": "sunday",
+      "label": "Sunday",
+      "events": []
+    }
+  ]
+}

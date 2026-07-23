@@ -1,4 +1,5 @@
-const DEFAULT_REPO = 'WeeTonyCooke/rosatos'
+const DEFAULT_ROSATOS_REPO = 'WeeTonyCooke/rosatos'
+const DEFAULT_FESTIVAL_REPO = 'WeeTonyCooke/movillefestival'
 const DEFAULT_BRANCH = 'main'
 
 function env(name, fallback = '') {
@@ -10,9 +11,23 @@ function env(name, fallback = '') {
 export function contentConfig() {
   return {
     token: env('CONTENT_GITHUB_TOKEN') || env('GITHUB_TOKEN'),
-    repo: env('CONTENT_REPO', DEFAULT_REPO),
+    repo: env('CONTENT_REPO', DEFAULT_ROSATOS_REPO),
     branch: env('CONTENT_BRANCH', DEFAULT_BRANCH),
   }
+}
+
+export function festivalContentConfig() {
+  return {
+    // Reuse the same PAT — it needs contents:write on both repos.
+    token: env('CONTENT_GITHUB_TOKEN') || env('GITHUB_TOKEN'),
+    repo: env('FESTIVAL_REPO', DEFAULT_FESTIVAL_REPO),
+    branch: env('FESTIVAL_BRANCH', DEFAULT_BRANCH),
+  }
+}
+
+/** Return the right config for the given venue slug. */
+export function venueContentConfig(venue) {
+  return venue === 'festival' ? festivalContentConfig() : contentConfig()
 }
 
 function githubHeaders(token) {
@@ -27,9 +42,10 @@ function githubHeaders(token) {
 
 /**
  * Read JSON files via GitHub Contents API.
+ * Accepts an optional config override; defaults to Rosato's config.
  */
-export async function readJsonFiles(paths) {
-  const { token, repo, branch } = contentConfig()
+export async function readJsonFiles(paths, config = null) {
+  const { token, repo, branch } = config || contentConfig()
   if (!token) {
     throw Object.assign(new Error('CONTENT_GITHUB_TOKEN is not configured'), {
       status: 500,
@@ -63,13 +79,15 @@ export async function readJsonFiles(paths) {
 /**
  * Publish JSON files via GitHub Contents API (PUT per file).
  * Creates one commit per changed file.
+ * Accepts an optional config override; defaults to Rosato's config.
  */
 export async function putJsonFilesViaContentsApi({
   files,
   message,
   previousMeta = {},
+  config = null,
 }) {
-  const { token, repo, branch } = contentConfig()
+  const { token, repo, branch } = config || contentConfig()
   if (!token) {
     throw Object.assign(new Error('CONTENT_GITHUB_TOKEN is not configured'), {
       status: 500,

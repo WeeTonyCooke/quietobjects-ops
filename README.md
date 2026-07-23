@@ -75,3 +75,7 @@ npm run lint
 ## Docs
 
 - [`docs/PHASE1-ROSATOS.md`](./docs/PHASE1-ROSATOS.md)
+
+## Code bundle
+
+Phase 1 snapshot zip: [quietobjects-ops-phase1.zip](https://quietobjects-ops.netlify.app/fixtures/quietobjects-ops-phase1.zip)

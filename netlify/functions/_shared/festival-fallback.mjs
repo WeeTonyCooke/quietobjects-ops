@@ -13,6 +13,8 @@ export async function runFestivalDeterministicChat({ message, bundle }) {
   const session = createFestivalToolSession(bundle)
   const lower = text.toLowerCase()
 
+  const DAYS = 'tuesday|wednesday|thursday|friday|saturday|sunday'
+
   // list programme
   if (
     /^(list|show|what.?s on|programme|program)\b/.test(lower) ||
@@ -23,11 +25,11 @@ export async function runFestivalDeterministicChat({ message, bundle }) {
     const lines = []
     for (const day of days) {
       if (!day.events?.length) continue
-      lines.push(`${day.label}:`)
+      lines.push(`${day.name} (${day.label}):`)
       for (const ev of day.events) {
         const time = ev.time ? ` · ${ev.time}` : ''
         const venue = ev.venue ? ` at ${ev.venue}` : ''
-        lines.push(`  • ${ev.name}${time}${venue}`)
+        lines.push(`  • ${ev.title}${time}${venue}`)
       }
     }
     return finish(
@@ -36,47 +38,51 @@ export async function runFestivalDeterministicChat({ message, bundle }) {
     )
   }
 
-  // remove event: "remove <name> from <day>"
+  // remove event: "remove <title> from <day>"
   const removeMatch = text.match(
-    /\bremove\s+(.+?)\s+from\s+(wednesday|thursday|friday|saturday|sunday)\b/i,
+    new RegExp(`\\bremove\\s+(.+?)\\s+from\\s+(${DAYS})\\b`, 'i'),
   )
   if (removeMatch) {
     await session.run('update_event', {
-      name: removeMatch[1].trim(),
+      title: removeMatch[1].trim(),
       day: removeMatch[2].trim(),
       action: 'remove',
     })
     return finish(session)
   }
 
-  // "<day> <time> <name> at <venue>"
+  // "<day> <time> <title> at <venue>"
   // e.g. "Wednesday 7pm Fancy Dress Parade at Festival Square"
   const fullMatch = text.match(
-    /\b(wednesday|thursday|friday|saturday|sunday)\b\s+(\d{1,2}(?:[:.]\d{2})?(?:\s*(?:am|pm))?)\s+(.+?)\s+at\s+(.+)$/i,
+    new RegExp(
+      `\\b(${DAYS})\\b\\s+(\\d{1,2}(?:[:.}]\\d{2})?(?:\\s*(?:am|pm))?)\\s+(.+?)\\s+at\\s+(.+)$`,
+      'i',
+    ),
   )
   if (fullMatch) {
     await session.run('update_event', {
       day: fullMatch[1],
       time: normalizeTime(fullMatch[2]),
-      name: fullMatch[3].trim(),
+      title: fullMatch[3].trim(),
       venue: fullMatch[4].trim(),
-      kind: inferKind(fullMatch[3], text),
       action: 'upsert',
     })
     return finish(session)
   }
 
-  // "<name> is <day> at <time>" or "<name> is <day> <time> at <venue>"
+  // "<title> is <day> at <time>" or "<title> is <day> <time> at <venue>"
   const simpleMatch = text.match(
-    /^(.+?)\s+is\s+(wednesday|thursday|friday|saturday|sunday)(?:\s+at\s+(\d{1,2}(?:[:.]\d{2})?(?:\s*(?:am|pm))?))?(?:\s+at\s+(.+))?$/i,
+    new RegExp(
+      `^(.+?)\\s+is\\s+(${DAYS})(?:\\s+at\\s+(\\d{1,2}(?:[:.}]\\d{2})?(?:\\s*(?:am|pm))?))?(?:\\s+at\\s+(.+))?$`,
+      'i',
+    ),
   )
   if (simpleMatch) {
     await session.run('update_event', {
-      name: simpleMatch[1].trim(),
+      title: simpleMatch[1].trim(),
       day: simpleMatch[2].trim(),
       time: normalizeTime(simpleMatch[3] || ''),
       venue: (simpleMatch[4] || '').trim(),
-      kind: inferKind(simpleMatch[1], text),
       action: 'upsert',
     })
     return finish(session)
@@ -137,14 +143,4 @@ function normalizeTime(raw) {
     return `${h.padStart(2, '0')}:${m}`
   }
   return cleaned
-}
-
-function inferKind(name, fullText) {
-  const hay = `${name} ${fullText}`.toLowerCase()
-  if (hay.includes('parade')) return 'parade'
-  if (hay.includes('race') || hay.includes('bed push')) return 'race'
-  if (hay.includes('music') || hay.includes('band') || hay.includes('live')) return 'music'
-  if (hay.includes('sport') || hay.includes('match') || hay.includes('game')) return 'sport'
-  if (hay.includes('family') || hay.includes('kids') || hay.includes('children')) return 'family'
-  return 'other'
 }

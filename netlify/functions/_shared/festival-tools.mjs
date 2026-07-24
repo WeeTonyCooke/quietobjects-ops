@@ -1,13 +1,12 @@
 import {
-  EVENT_KINDS,
   findDay,
   findEvent,
   slugify,
 } from './festival-content.mjs'
 
 /**
- * Provider-agnostic ops tool definitions for Moville Festival Phase 2.
- * Canonical shape uses JSON Schema in `parameters` (OpenAI tools format).
+ * Provider-agnostic ops tool definitions for Moville Festival.
+ * Fields match the ProgrammeEvent type in ProgrammePage.tsx exactly.
  */
 export const FESTIVAL_TOOLS = [
   {
@@ -23,30 +22,53 @@ export const FESTIVAL_TOOLS = [
   {
     name: 'update_event',
     description:
-      'Create, update, or remove a festival event on a specific day. Use action=remove to delete.',
+      'Create, update, or remove a festival event on a specific day. Use action=remove to delete. Day can be a key (WED), full name (Wednesday) or short form (wed).',
     parameters: {
       type: 'object',
       properties: {
         day: {
           type: 'string',
-          description: 'Day label, e.g. Wednesday, Thursday, Friday, Saturday, Sunday',
+          description: 'Day key or name: TUE/WED/THU/FRI/SAT/SUN or Tuesday/Wednesday etc.',
         },
-        name: { type: 'string', description: 'Event name' },
-        time: { type: 'string', description: 'Local time, e.g. 19:00' },
-        venue: { type: 'string', description: 'Venue name, e.g. Festival Square, Quay Street' },
-        kind: {
+        title: {
           type: 'string',
-          enum: EVENT_KINDS,
-          description: 'Event kind',
+          description: 'Event title, e.g. "Fancy Dress Opening Parade"',
         },
-        detail: { type: 'string', description: 'One-line detail shown on the programme (optional)' },
+        time: {
+          type: 'string',
+          description: 'Local start time in HH:MM format, e.g. 19:00',
+        },
+        venue: {
+          type: 'string',
+          description: 'Venue name, e.g. Festival Square, Quay Street',
+        },
+        strapline: {
+          type: 'string',
+          description: 'One or two sentence description shown on the programme (optional)',
+        },
+        admission: {
+          type: 'string',
+          description: 'Admission price if charged, e.g. €10 (optional — omit for free events)',
+        },
+        headline: {
+          type: 'boolean',
+          description: 'Mark as a headliner event — shows a badge and bold styling (optional)',
+        },
+        registerUrl: {
+          type: 'string',
+          description: 'Internal path for a register/book CTA, e.g. /bed-push (optional)',
+        },
+        registerLabel: {
+          type: 'string',
+          description: 'Label for the register link, e.g. "Register your team" (optional)',
+        },
         action: {
           type: 'string',
           enum: ['upsert', 'remove'],
-          description: 'Default upsert',
+          description: 'upsert (default) to add or update; remove to delete',
         },
       },
-      required: ['day', 'name'],
+      required: ['day', 'title'],
       additionalProperties: false,
     },
   },
@@ -101,16 +123,17 @@ function listProgramme(state) {
   return {
     ok: true,
     year: state.programme.year,
-    note: state.programme.note || '',
     days: (state.programme.days || []).map((d) => ({
+      key: d.key,
+      name: d.name,
       label: d.label,
-      date: d.date || null,
       events: (d.events || []).map((ev) => ({
-        name: ev.name,
+        title: ev.title,
         time: ev.time || '',
         venue: ev.venue || '',
-        kind: ev.kind || 'other',
-        detail: ev.detail || '',
+        strapline: ev.strapline || '',
+        admission: ev.admission || '',
+        headline: ev.headline || false,
       })),
     })),
   }
@@ -123,8 +146,8 @@ function updateEvent(state, input) {
   const dayLabel = String(input.day || '').trim()
   if (!dayLabel) return { ok: false, error: 'day is required' }
 
-  const name = String(input.name || '').trim()
-  if (!name) return { ok: false, error: 'name is required' }
+  const title = String(input.title || '').trim()
+  if (!title) return { ok: false, error: 'title is required' }
 
   const action = input.action || 'upsert'
 
@@ -133,53 +156,93 @@ function updateEvent(state, input) {
   if (action === 'remove') {
     if (!day) return { ok: false, error: `Day not found: ${dayLabel}` }
     const before = (day.events || []).length
+    const normTitle = title.toLowerCase().normalize('NFD').replace(/[^a-z0-9 ]/g, '').trim()
     day.events = (day.events || []).filter((ev) => {
-      const existingNorm = ev.name.toLowerCase().normalize('NFD').replace(/[^a-z0-9 ]/g, '').trim()
-      const inputNorm = name.toLowerCase().normalize('NFD').replace(/[^a-z0-9 ]/g, '').trim()
-      return existingNorm !== inputNorm
+      const evNorm = String(ev.title || '').toLowerCase().normalize('NFD').replace(/[^a-z0-9 ]/g, '').trim()
+      return evNorm !== normTitle
     })
     if (day.events.length === before) {
-      return { ok: false, error: `Event not found on ${day.label}: ${name}` }
+      return { ok: false, error: `Event not found on ${day.name}: ${title}` }
     }
     state.changed.add('programme')
-    const description = `Programme · removed ${name} from ${day.label}`
+    const description = `Programme · removed "${title}" from ${day.name}`
     state.descriptions.push(description)
     return { ok: true, description }
   }
 
-  // upsert
+  // upsert — auto-create day if missing
   if (!day) {
-    // Auto-create the day if it doesn't exist
-    const normalised = dayLabel.charAt(0).toUpperCase() + dayLabel.slice(1).toLowerCase()
-    day = { id: dayLabel.toLowerCase(), label: normalised, events: [] }
+    const upperKey = dayLabel.toUpperCase().slice(0, 3)
+    const capitalized = dayLabel.charAt(0).toUpperCase() + dayLabel.slice(1).toLowerCase()
+    day = {
+      key: upperKey,
+      label: capitalized,
+      name: capitalized,
+      dateLabel: '',
+      festivalDate: {},
+      events: [],
+    }
     state.programme.days.push(day)
   }
 
   if (!Array.isArray(day.events)) day.events = []
 
-  const existing = findEvent(day, name)
+  const existing = findEvent(day, title)
 
+  // Build the updated event — only overwrite fields explicitly provided
   const entry = {
-    id: slugify(name),
-    name,
-    time: String(input.time || existing?.time || '').trim(),
-    venue: String(input.venue || existing?.venue || '').trim(),
-    kind: input.kind || existing?.kind || 'other',
-    detail: String(input.detail || existing?.detail || '').trim(),
+    time: String(input.time ?? existing?.time ?? '').trim(),
+    title,
+    ...(input.venue !== undefined
+      ? { venue: String(input.venue).trim() }
+      : existing?.venue !== undefined
+        ? { venue: existing.venue }
+        : {}),
+    ...(input.strapline !== undefined
+      ? { strapline: String(input.strapline).trim() }
+      : existing?.strapline !== undefined
+        ? { strapline: existing.strapline }
+        : {}),
+    ...(input.admission !== undefined
+      ? { admission: String(input.admission).trim() }
+      : existing?.admission !== undefined
+        ? { admission: existing.admission }
+        : {}),
+    ...(input.headline !== undefined
+      ? { headline: Boolean(input.headline) }
+      : existing?.headline !== undefined
+        ? { headline: existing.headline }
+        : {}),
+    ...(input.registerUrl !== undefined
+      ? { registerUrl: String(input.registerUrl).trim() }
+      : existing?.registerUrl !== undefined
+        ? { registerUrl: existing.registerUrl }
+        : {}),
+    ...(input.registerLabel !== undefined
+      ? { registerLabel: String(input.registerLabel).trim() }
+      : existing?.registerLabel !== undefined
+        ? { registerLabel: existing.registerLabel }
+        : {}),
   }
+
+  // Remove falsy optional fields so the JSON stays clean
+  for (const k of ['venue', 'strapline', 'admission', 'registerUrl', 'registerLabel']) {
+    if (!entry[k]) delete entry[k]
+  }
+  if (!entry.headline) delete entry.headline
 
   if (existing) {
     Object.assign(existing, entry)
   } else {
     day.events.push(entry)
-    // Sort events by time within the day
+    // Sort by time within the day
     day.events.sort((a, b) => (a.time || '').localeCompare(b.time || ''))
   }
 
   state.changed.add('programme')
-  const timeStr = entry.time ? ` · ${entry.time}` : ''
-  const venueStr = entry.venue ? ` at ${entry.venue}` : ''
-  const description = `Programme · ${day.label}: ${name}${timeStr}${venueStr}`
+  const timeStr = entry.time ? ` at ${entry.time}` : ''
+  const venueStr = entry.venue ? ` · ${entry.venue}` : ''
+  const description = `Programme · ${day.name}: "${title}"${timeStr}${venueStr}`
   state.descriptions.push(description)
   return { ok: true, description, entry }
 }

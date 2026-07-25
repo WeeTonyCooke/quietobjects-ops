@@ -29,7 +29,7 @@ const VENUE_CONFIG = {
   rosatos: {
     title: "Rosato's ops",
     lede: 'Stage programme or menu changes from chat or a PDF. Confirm before anything publishes.',
-    welcome: 'Rosato's Phase 1 ops. Type a change, or attach a PDF menu update — then press Confirm before anything publishes.',
+    welcome: "Rosato's Phase 1 ops. Type a change, or attach a PDF menu update — then press Confirm before anything publishes.",
     suggestions: [
       'list programme',
       'Steak Burger is 17.50',

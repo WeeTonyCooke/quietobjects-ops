@@ -1,5 +1,6 @@
 const DEFAULT_ROSATOS_REPO = 'WeeTonyCooke/rosatos'
 const DEFAULT_FESTIVAL_REPO = 'WeeTonyCooke/movillefestival'
+const DEFAULT_GOLF_REPO = 'WeeTonyCooke/quiet-objects-golf-demo'
 const DEFAULT_BRANCH = 'main'
 
 function env(name, fallback = '') {
@@ -18,16 +19,35 @@ export function contentConfig() {
 
 export function festivalContentConfig() {
   return {
-    // Reuse the same PAT — it needs contents:write on both repos.
     token: env('CONTENT_GITHUB_TOKEN') || env('GITHUB_TOKEN'),
     repo: env('FESTIVAL_REPO', DEFAULT_FESTIVAL_REPO),
     branch: env('FESTIVAL_BRANCH', DEFAULT_BRANCH),
   }
 }
 
+/**
+ * Golf club content config.
+ *
+ * Phase 1: single GOLF_REPO env var for the pilot club.
+ * Multi-club: add per-club env vars — GOLF_REPO_MOSSY_GLEN, GOLF_REPO_GREENCASTLE etc.
+ * Pass the slug to pick the right one; falls back to GOLF_REPO.
+ */
+export function golfContentConfig(slug = null) {
+  const envKey = slug
+    ? `GOLF_REPO_${slug.toUpperCase().replace(/-/g, '_')}`
+    : null
+  return {
+    token: env('CONTENT_GITHUB_TOKEN') || env('GITHUB_TOKEN'),
+    repo: (envKey && env(envKey)) || env('GOLF_REPO', DEFAULT_GOLF_REPO),
+    branch: env('GOLF_BRANCH', DEFAULT_BRANCH),
+  }
+}
+
 /** Return the right config for the given venue slug. */
 export function venueContentConfig(venue) {
-  return venue === 'festival' ? festivalContentConfig() : contentConfig()
+  if (venue === 'festival') return festivalContentConfig()
+  if (venue === 'golf') return golfContentConfig()
+  return contentConfig()
 }
 
 function githubHeaders(token) {
@@ -40,10 +60,6 @@ function githubHeaders(token) {
   }
 }
 
-/**
- * Read JSON files via GitHub Contents API.
- * Accepts an optional config override; defaults to Rosato's config.
- */
 export async function readJsonFiles(paths, config = null) {
   const { token, repo, branch } = config || contentConfig()
   if (!token) {
@@ -76,11 +92,6 @@ export async function readJsonFiles(paths, config = null) {
   return { files, meta, repo, branch }
 }
 
-/**
- * Publish JSON files via GitHub Contents API (PUT per file).
- * Creates one commit per changed file.
- * Accepts an optional config override; defaults to Rosato's config.
- */
 export async function putJsonFilesViaContentsApi({
   files,
   message,
@@ -103,7 +114,6 @@ export async function putJsonFilesViaContentsApi({
     const content = `${JSON.stringify(files[path], null, 2)}\n`
     const encoded = Buffer.from(content, 'utf8').toString('base64')
 
-    // Re-read SHA immediately before write to reduce conflicts.
     let sha = previousMeta[path]?.sha
     const headRes = await fetch(
       `https://api.github.com/repos/${repo}/contents/${path}?ref=${encodeURIComponent(branch)}`,

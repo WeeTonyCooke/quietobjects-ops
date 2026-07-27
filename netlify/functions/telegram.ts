@@ -1,23 +1,6 @@
 import type { Config } from '@netlify/functions'
-import {
-  EDITABLE_FILES as ROSATOS_FILES,
-  bundleFromFiles as rosatosBundleFromFiles,
-  filesFromBundle as rosatosFilesFromBundle,
-} from './_shared/content.mjs'
-import {
-  EDITABLE_FILES as FESTIVAL_FILES,
-  bundleFromFiles as festivalBundleFromFiles,
-  filesFromBundle as festivalFilesFromBundle,
-} from './_shared/festival-content.mjs'
-import {
-  readJsonFiles,
-  venueContentConfig,
-  putJsonFilesViaContentsApi,
-} from './_shared/github.mjs'
-import { runOpsChat } from './_shared/agent.mjs'
-import { runFestivalOpsChat } from './_shared/festival-agent.mjs'
-import { runDeterministicOpsChat } from './_shared/fallback.mjs'
-import { runFestivalDeterministicChat } from './_shared/festival-fallback.mjs'
+import { readJsonFiles, putJsonFilesViaContentsApi } from './_shared/github.mjs'
+import { getVenue } from './_shared/venue-registry.mjs'
 import { signProposal, verifySignedProposal } from './_shared/proposals.mjs'
 import { appendAudit } from './_shared/audit.mjs'
 import {
@@ -52,8 +35,6 @@ export default async (req: Request) => {
     return new Response('Bad request', { status: 400 })
   }
 
-  // Always return 200 to Telegram — errors are handled internally so the
-  // webhook is not retried with the same bad payload.
   try {
     if (update.message) {
       await handleMessage(update.message)
@@ -75,17 +56,15 @@ async function handleMessage(message: any) {
 
   if (!chatId) return
 
-  // Handle bot commands
   if (text.startsWith('/')) {
     await handleCommand(chatId, text)
     return
   }
 
-  // Ignore empty / non-text messages
   if (!text.trim()) return
 
-  const venue = venueForChatId(chatId)
-  if (!venue) {
+  const venueSlug = venueForChatId(chatId)
+  if (!venueSlug) {
     console.warn(`[telegram] unauthorised chat: ${chatId}`)
     await sendMessage(
       chatId,
@@ -94,13 +73,9 @@ async function handleMessage(message: any) {
     return
   }
 
-  // Run the tool loop
-  let result: any
-  let source = 'ai-tools'
-
   try {
-    const { bundle, meta, repo, branch } = await fetchBundle(venue)
-    ;({ result, source } = await stage({ text, venue, bundle }))
+    const { bundle, meta, repo, branch } = await fetchBundle(venueSlug)
+    const { result, source } = await stage({ text, venueSlug, bundle })
 
     if (!result.hasChanges) {
       await appendAudit({
@@ -110,24 +85,25 @@ async function handleMessage(message: any) {
         message: text,
         toolTrace: result.toolTrace,
         source,
-        venue,
+        venue: venueSlug,
         channel: 'telegram',
       })
       await sendMessage(
         chatId,
-        result.reply || 'No changes staged. Try: "list programme" or describe a change.',
+        result.reply ||
+          'No changes staged. Try: "list programme" or describe a change.',
       )
       return
     }
 
-    // Build and sign the proposal
-    const filesFromBundle =
-      venue === 'festival' ? festivalFilesFromBundle : rosatosFilesFromBundle
+    const venue = getVenue(venueSlug)
     const changedSet = new Set(result.changed)
-    const proposalFiles = filesFromBundle(result.bundle, { onlyChanged: changedSet })
+    const proposalFiles = venue.filesFromBundle(result.bundle, {
+      onlyChanged: changedSet,
+    })
 
     const proposal = {
-      venue,
+      venue: venueSlug,
       repo,
       branch,
       createdAt: new Date().toISOString(),
@@ -155,7 +131,7 @@ async function handleMessage(message: any) {
       paths: Object.keys(proposalFiles),
       toolTrace: result.toolTrace,
       source,
-      venue,
+      venue: venueSlug,
       channel: 'telegram',
     })
 
@@ -186,13 +162,12 @@ async function handleCallbackQuery(callbackQuery: any) {
   const messageId = callbackQuery.message?.message_id
   const action: string = callbackQuery.data || ''
 
-  // Always answer immediately to clear the loading spinner
   await answerCallbackQuery(callbackQueryId).catch(() => {})
 
   if (!chatId) return
 
-  const venue = venueForChatId(chatId)
-  if (!venue) return
+  const venueSlug = venueForChatId(chatId)
+  if (!venueSlug) return
 
   const session = await loadPendingProposal(chatId)
   if (!session) {
@@ -200,15 +175,19 @@ async function handleCallbackQuery(callbackQuery: any) {
       chatId,
       messageId,
       'No pending change found — it may have expired (15 min limit). Please re-send your update.',
-    ).catch(() => sendMessage(chatId, 'No pending change found — please re-send.'))
+    ).catch(() =>
+      sendMessage(chatId, 'No pending change found — please re-send.'),
+    )
     return
   }
 
   if (action === 'discard') {
     await deletePendingProposal(chatId)
-    await editMessageText(chatId, messageId, 'Discarded. Nothing was written.').catch(
-      () => sendMessage(chatId, 'Discarded.'),
-    )
+    await editMessageText(
+      chatId,
+      messageId,
+      'Discarded. Nothing was written.',
+    ).catch(() => sendMessage(chatId, 'Discarded.'))
     return
   }
 
@@ -219,7 +198,8 @@ async function handleCallbackQuery(callbackQuery: any) {
         signature: session.signature,
       })
 
-      const venueConfig = venueContentConfig(proposal.venue)
+      const venue = getVenue(proposal.venue)
+      const venueConfig = venue.contentConfig()
       const venueName =
         proposal.venue === 'festival' ? 'moville-festival' : proposal.venue
 
@@ -262,8 +242,8 @@ async function handleCallbackQuery(callbackQuery: any) {
         ...(result.url ? [result.url] : []),
       ]
 
-      await editMessageText(chatId, messageId, lines.join('\n')).catch(
-        () => sendMessage(chatId, lines.join('\n')),
+      await editMessageText(chatId, messageId, lines.join('\n')).catch(() =>
+        sendMessage(chatId, lines.join('\n')),
       )
     } catch (error) {
       console.error('[telegram] publish error:', error)
@@ -281,23 +261,29 @@ async function handleCommand(chatId: number, text: string) {
   const cmd = text.split(/\s/)[0].toLowerCase()
 
   if (cmd === '/start' || cmd === '/help') {
-    const venue = venueForChatId(chatId)
-    const venueNote = venue
-      ? `This chat is configured for: ${venue === 'festival' ? 'Moville Festival' : "Rosato's"}`
-      : 'This chat is not yet authorised — contact the admin.'
+    const venueSlug = venueForChatId(chatId)
+    let venueNote: string
+    if (!venueSlug) {
+      venueNote = 'This chat is not yet authorised — contact the admin.'
+    } else {
+      const venue = getVenue(venueSlug)
+      venueNote = `This chat is configured for: ${venue.displayName}`
+    }
 
     const help = [
       'Quiet Objects ops bot',
       '',
       venueNote,
       '',
-      'Just type a content change — I'll show you a preview and publish it live to movillefestival.com the moment you confirm.',
+      'Just type a content change — I'll show you a preview and publish it live the moment you confirm.',
       '',
       'Examples:',
       '  list programme',
       '  Wednesday 7pm Fancy Dress Parade at Festival Square',
       '  Steak Burger is 17.50',
       '  Saturday is Seán Óg at 22:00',
+      '  course closed, frost',
+      '  visitor weekend is €45',
     ].join('\n')
 
     await sendMessage(chatId, help)
@@ -305,86 +291,63 @@ async function handleCommand(chatId: number, text: string) {
   }
 
   if (cmd === '/venue') {
-    const venue = venueForChatId(chatId)
-    await sendMessage(
-      chatId,
-      venue
-        ? `Venue: ${venue === 'festival' ? 'Moville Festival' : "Rosato's"}`
-        : 'Not authorised.',
-    )
+    const venueSlug = venueForChatId(chatId)
+    if (!venueSlug) {
+      await sendMessage(chatId, 'Not authorised.')
+      return
+    }
+    const venue = getVenue(venueSlug)
+    await sendMessage(chatId, `Venue: ${venue.displayName}`)
     return
   }
 }
 
 // ── Shared staging logic ─────────────────────────────────────────────────────
 
-async function fetchBundle(venue: string) {
-  const venueConfig = venueContentConfig(venue)
-  const editableFiles = venue === 'festival' ? FESTIVAL_FILES : ROSATOS_FILES
-  const bundleFromFiles =
-    venue === 'festival' ? festivalBundleFromFiles : rosatosBundleFromFiles
-
+async function fetchBundle(venueSlug: string) {
+  const venue = getVenue(venueSlug)
+  const venueConfig = venue.contentConfig()
   const { files, meta, repo, branch } = await readJsonFiles(
-    editableFiles,
+    venue.editableFiles,
     venueConfig,
   )
-  const bundle = bundleFromFiles(files)
+  const bundle = venue.bundleFromFiles(files)
   return { bundle, meta, repo, branch }
 }
 
 async function stage({
   text,
-  venue,
+  venueSlug,
   bundle,
 }: {
   text: string
-  venue: string
+  venueSlug: string
   bundle: any
 }) {
+  const venue = getVenue(venueSlug)
   let result: any
   let source = 'ai-tools'
 
-  if (venue === 'festival') {
-    const deterministic = await runFestivalDeterministicChat({
-      message: text,
-      bundle,
-    })
-    if (deterministic?.hasChanges) {
-      return { result: deterministic, source: 'deterministic-tools' }
-    }
-    try {
-      result = await runFestivalOpsChat({ message: text, bundle, history: [] })
-      source = `${result.provider}:${result.model}`
-    } catch (error) {
-      result =
-        deterministic ||
-        (await runFestivalDeterministicChat({ message: text, bundle }))
-      source = 'deterministic-tools'
-      result.reply = `${result.reply}\n\n(AI unavailable: ${error.message})`
-    }
-  } else {
-    const deterministic = await runDeterministicOpsChat({
-      message: text,
-      bundle,
-    })
-    if (deterministic?.hasChanges) {
-      return { result: deterministic, source: 'deterministic-tools' }
-    }
-    try {
-      result = await runOpsChat({
-        message: text,
-        bundle,
-        history: [],
-        attachment: null,
-      })
-      source = `${result.provider}:${result.model}`
-    } catch (error) {
-      result =
-        deterministic ||
-        (await runDeterministicOpsChat({ message: text, bundle }))
-      source = 'deterministic-tools'
-      result.reply = `${result.reply}\n\n(AI unavailable: ${error.message})`
-    }
+  const deterministic = venue.runDeterministicChat
+    ? await venue.runDeterministicChat({ message: text, bundle })
+    : null
+
+  if (deterministic?.hasChanges) {
+    return { result: deterministic, source: 'deterministic-tools' }
+  }
+
+  try {
+    result = await venue.runOpsChat({ message: text, bundle, history: [] })
+    source = `${result.provider}:${result.model}`
+  } catch (error) {
+    result =
+      deterministic ||
+      (venue.runDeterministicChat
+        ? await venue.runDeterministicChat({ message: text, bundle })
+        : null)
+    if (!result) throw error
+    source = 'deterministic-tools'
+    result.reply = `${result.reply}\n\n(AI unavailable: ${error.message})`
   }
 
   return { result, source }

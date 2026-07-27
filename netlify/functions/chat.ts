@@ -1,20 +1,7 @@
 import type { Config, Context } from '@netlify/functions'
 import { requireOpsUser, json, errorResponse } from './_shared/auth.mjs'
-import {
-  EDITABLE_FILES as ROSATOS_FILES,
-  bundleFromFiles as rosatosBundleFromFiles,
-  filesFromBundle as rosatosFilesFromBundle,
-} from './_shared/content.mjs'
-import {
-  EDITABLE_FILES as FESTIVAL_FILES,
-  bundleFromFiles as festivalBundleFromFiles,
-  filesFromBundle as festivalFilesFromBundle,
-} from './_shared/festival-content.mjs'
-import { readJsonFiles, venueContentConfig } from './_shared/github.mjs'
-import { runOpsChat } from './_shared/agent.mjs'
-import { runFestivalOpsChat } from './_shared/festival-agent.mjs'
-import { runDeterministicOpsChat } from './_shared/fallback.mjs'
-import { runFestivalDeterministicChat } from './_shared/festival-fallback.mjs'
+import { readJsonFiles } from './_shared/github.mjs'
+import { getVenue, isValidVenue } from './_shared/venue-registry.mjs'
 import { signProposal } from './_shared/proposals.mjs'
 import { appendAudit } from './_shared/audit.mjs'
 import { loadAttachment } from './_shared/attachments.mjs'
@@ -30,68 +17,58 @@ export default async (req: Request, _context: Context) => {
     const message = body?.message
     const history = Array.isArray(body?.history) ? body.history : []
     const attachmentId = body?.attachmentId || null
-    const venue = body?.venue === 'festival' ? 'festival' : 'rosatos'
+    const venueSlug: string = body?.venue ?? 'rosatos'
 
-    // Attachments are Rosato's-only in Phase 1; festival has no PDF attachment flow yet.
+    if (!isValidVenue(venueSlug)) {
+      return json({ error: `Unknown venue: "${venueSlug}"` }, 400)
+    }
+
+    const venue = getVenue(venueSlug)
+
+    // Attachments are opt-in per venue type
     const attachment =
-      attachmentId && venue === 'rosatos'
+      attachmentId && venue.supportsAttachments
         ? await loadAttachment(attachmentId)
         : null
-    if (attachmentId && venue === 'rosatos' && !attachment) {
+    if (attachmentId && venue.supportsAttachments && !attachment) {
       throw Object.assign(new Error('Attachment not found — upload again'), {
         status: 404,
       })
     }
 
-    const venueConfig = venueContentConfig(venue)
-    const editableFiles = venue === 'festival' ? FESTIVAL_FILES : ROSATOS_FILES
-    const bundleFromFiles =
-      venue === 'festival' ? festivalBundleFromFiles : rosatosBundleFromFiles
-    const filesFromBundle =
-      venue === 'festival' ? festivalFilesFromBundle : rosatosFilesFromBundle
-
+    const venueConfig = venue.contentConfig()
     const { files, meta, repo, branch } = await readJsonFiles(
-      editableFiles,
+      venue.editableFiles,
       venueConfig,
     )
-    const bundle = bundleFromFiles(files)
+    const bundle = venue.bundleFromFiles(files)
 
-    let result
+    // Stage: try deterministic fallback first, then AI
+    let result: any
     let source = 'ai-tools'
 
-    if (venue === 'festival') {
-      const deterministic = await runFestivalDeterministicChat({ message, bundle })
-      if (deterministic?.hasChanges) {
-        result = deterministic
-        source = 'deterministic-tools'
-      } else {
-        try {
-          result = await runFestivalOpsChat({ message, bundle, history })
-          source = `${result.provider}:${result.model}`
-        } catch (error) {
-          result = deterministic || (await runFestivalDeterministicChat({ message, bundle }))
-          source = 'deterministic-tools'
-          result.reply = `${result.reply}\n\n(AI gateway unavailable: ${error.message})`
-        }
-      }
-    } else {
-      // Rosato's path — unchanged logic
-      const deterministic = attachment
+    const deterministic =
+      attachment || !venue.runDeterministicChat
         ? null
-        : await runDeterministicOpsChat({ message, bundle })
-      if (deterministic?.hasChanges) {
-        result = deterministic
+        : await venue.runDeterministicChat({ message, bundle })
+
+    if (deterministic?.hasChanges) {
+      result = deterministic
+      source = 'deterministic-tools'
+    } else {
+      try {
+        result = await venue.runOpsChat({ message, bundle, history, attachment })
+        source = `${result.provider}:${result.model}`
+      } catch (error) {
+        if (attachment) throw error
+        result =
+          deterministic ||
+          (venue.runDeterministicChat
+            ? await venue.runDeterministicChat({ message, bundle })
+            : null)
+        if (!result) throw error
         source = 'deterministic-tools'
-      } else {
-        try {
-          result = await runOpsChat({ message, bundle, history, attachment })
-          source = `${result.provider}:${result.model}`
-        } catch (error) {
-          if (attachment) throw error
-          result = deterministic || (await runDeterministicOpsChat({ message, bundle }))
-          source = 'deterministic-tools'
-          result.reply = `${result.reply}\n\n(AI gateway unavailable: ${error.message})`
-        }
+        result.reply = `${result.reply}\n\n(AI gateway unavailable: ${error.message})`
       }
     }
 
@@ -103,7 +80,7 @@ export default async (req: Request, _context: Context) => {
         message: String(message || ''),
         toolTrace: result.toolTrace,
         source,
-        venue,
+        venue: venueSlug,
       })
       return json({
         ok: true,
@@ -115,12 +92,12 @@ export default async (req: Request, _context: Context) => {
     }
 
     const changedSet = new Set(result.changed)
-    const proposalFiles = filesFromBundle(result.bundle, {
+    const proposalFiles = venue.filesFromBundle(result.bundle, {
       onlyChanged: changedSet,
     })
 
     const proposal = {
-      venue,
+      venue: venueSlug,
       repo,
       branch,
       createdAt: new Date().toISOString(),
@@ -149,7 +126,7 @@ export default async (req: Request, _context: Context) => {
       paths: Object.keys(proposalFiles),
       toolTrace: result.toolTrace,
       source,
-      venue,
+      venue: venueSlug,
     })
 
     return json({

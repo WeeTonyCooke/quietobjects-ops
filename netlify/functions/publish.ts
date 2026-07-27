@@ -1,12 +1,9 @@
 import type { Config, Context } from '@netlify/functions'
-import { requireOpsUser, json, errorResponse } from './_shared/auth.mjs'
-import { EDITABLE_FILES as ROSATOS_FILES } from './_shared/content.mjs'
-import { EDITABLE_FILES as FESTIVAL_FILES } from './_shared/festival-content.mjs'
-import { putJsonFilesViaContentsApi, venueContentConfig } from './_shared/github.mjs'
+import { requireOpsUser, requireVenueAccess, json, errorResponse } from './_shared/auth.mjs'
+import { getVenue, isValidVenue } from './_shared/venue-registry.mjs'
+import { putJsonFilesViaContentsApi } from './_shared/github.mjs'
 import { verifySignedProposal } from './_shared/proposals.mjs'
 import { appendAudit } from './_shared/audit.mjs'
-
-const VALID_VENUES = new Set(['rosatos', 'festival'])
 
 export default async (req: Request, _context: Context) => {
   if (req.method !== 'POST') {
@@ -21,21 +18,25 @@ export default async (req: Request, _context: Context) => {
       signature: body?.signature,
     })
 
-    const venue = proposal.venue
-    if (!VALID_VENUES.has(venue)) {
-      throw Object.assign(new Error(`Unexpected venue in proposal: ${venue}`), {
+    const venueSlug = proposal.venue
+    if (!isValidVenue(venueSlug)) {
+      throw Object.assign(new Error(`Unexpected venue in proposal: ${venueSlug}`), {
         status: 400,
       })
     }
 
-    const allowedFiles = venue === 'festival' ? FESTIVAL_FILES : ROSATOS_FILES
+    requireVenueAccess(user, venueSlug)
+
+    const venue = getVenue(venueSlug)
     const files = proposal.files || {}
     const paths = Object.keys(files)
+
     for (const path of paths) {
-      if (!allowedFiles.includes(path)) {
-        throw Object.assign(new Error(`Refusing to publish ${path} for venue ${venue}`), {
-          status: 400,
-        })
+      if (!venue.editableFiles.includes(path)) {
+        throw Object.assign(
+          new Error(`Refusing to publish ${path} for venue ${venueSlug}`),
+          { status: 400 },
+        )
       }
     }
     if (!paths.length) {
@@ -44,7 +45,7 @@ export default async (req: Request, _context: Context) => {
       })
     }
 
-    const venueName = venue === 'festival' ? 'moville-festival' : venue
+    const venueName = venueSlug === 'festival' ? 'moville-festival' : venueSlug
     const message = [
       `ops(${venueName}): ${proposal.summary}`,
       '',
@@ -52,7 +53,7 @@ export default async (req: Request, _context: Context) => {
       `Chat: ${proposal.message}`,
     ].join('\n')
 
-    const venueConfig = venueContentConfig(venue)
+    const venueConfig = venue.contentConfig()
     const result = await putJsonFilesViaContentsApi({
       files,
       message,
@@ -70,7 +71,7 @@ export default async (req: Request, _context: Context) => {
       repo: result.repo,
       branch: result.branch,
       toolTrace: proposal.toolTrace || [],
-      venue,
+      venue: venueSlug,
     })
 
     return json({

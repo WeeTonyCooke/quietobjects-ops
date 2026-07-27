@@ -71,6 +71,22 @@ const VENUE_CONFIG = {
   },
 }
 
+
+/**
+ * Return venue IDs this user may access.
+ * null = all venues (admin, bypass, or no venue roles set).
+ * string[] = explicit allow-list from venue:* roles.
+ */
+function getAllowedVenues(user) {
+  if (!user) return []
+  const roles = user.app_metadata?.roles || []
+  if (roles.includes('admin')) return null
+  const venueRoles = roles
+    .filter((r) => r.startsWith('venue:'))
+    .map((r) => r.slice('venue:'.length))
+  return venueRoles.length ? venueRoles : null
+}
+
 export default function App() {
   const [user, setUser] = useState(null)
   const [authReady, setAuthReady] = useState(false)
@@ -90,6 +106,10 @@ export default function App() {
   const fileRef = useRef(null)
 
   const venueConfig = VENUE_CONFIG[venue]
+  const allowedVenues = getAllowedVenues(user)
+  const visibleVenues = allowedVenues
+    ? VENUES.filter((v) => allowedVenues.includes(v.id))
+    : VENUES
 
   useEffect(() => {
     let alive = true
@@ -350,7 +370,7 @@ export default function App() {
         </div>
         <div className="top-meta">
           <nav className="venue-switcher" aria-label="Venue">
-            {VENUES.map((v) => (
+            {visibleVenues.map((v) => (
               <button
                 key={v.id}
                 type="button"

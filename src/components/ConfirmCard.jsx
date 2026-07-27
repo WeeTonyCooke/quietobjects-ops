@@ -12,10 +12,7 @@ export default function ConfirmCard({ pending, busy, onConfirm, onDiscard }) {
         {pending.attachmentName ? (
           <p className="confirm-note">From attachment: {pending.attachmentName}</p>
         ) : null}
-        <p className="confirm-note">
-          Writes into Rosato’s <code>programme.json</code> / <code>menu.json</code>.
-          Nothing goes live until you confirm.
-        </p>
+        <p className="confirm-note">Nothing goes live until you confirm.</p>
       </div>
       <div className="confirm-actions">
         <button type="button" className="ghost" disabled={busy} onClick={onDiscard}>

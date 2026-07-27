@@ -1,5 +1,5 @@
 import type { Config, Context } from '@netlify/functions'
-import { requireOpsUser, json, errorResponse } from './_shared/auth.mjs'
+import { requireOpsUser, requireVenueAccess, json, errorResponse } from './_shared/auth.mjs'
 import { readJsonFiles } from './_shared/github.mjs'
 import { getVenue, isValidVenue } from './_shared/venue-registry.mjs'
 import { signProposal } from './_shared/proposals.mjs'
@@ -22,6 +22,8 @@ export default async (req: Request, _context: Context) => {
     if (!isValidVenue(venueSlug)) {
       return json({ error: `Unknown venue: "${venueSlug}"` }, 400)
     }
+
+    requireVenueAccess(user, venueSlug)
 
     const venue = getVenue(venueSlug)
 

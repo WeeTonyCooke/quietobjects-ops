@@ -275,7 +275,7 @@ async function handleCommand(chatId: number, text: string) {
       '',
       venueNote,
       '',
-      'Just type a content change — I'll show you a preview and publish it live the moment you confirm.',
+      "Just type a content change — I'll show you a preview and publish it live the moment you confirm.",
       '',
       'Examples:',
       '  list programme',

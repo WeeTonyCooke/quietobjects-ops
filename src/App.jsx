@@ -23,6 +23,7 @@ import AuditLog from './components/AuditLog.jsx'
 const VENUES = [
   { id: 'rosatos', label: "Rosato's" },
   { id: 'festival', label: 'Moville Festival' },
+  { id: 'golf', label: 'Tuns Links' },
 ]
 
 const VENUE_CONFIG = {
@@ -30,6 +31,7 @@ const VENUE_CONFIG = {
     title: "Rosato's ops",
     lede: 'Stage programme or menu changes from chat or a PDF. Confirm before anything publishes.',
     welcome: "Rosato's Phase 1 ops. Type a change, or attach a PDF menu update — then press Confirm before anything publishes.",
+    placeholder: 'e.g. Steak Burger is 17.50 — or attach a PDF menu',
     suggestions: [
       'list programme',
       'Steak Burger is 17.50',
@@ -43,6 +45,7 @@ const VENUE_CONFIG = {
     title: 'Moville Festival ops',
     lede: 'Stage programme changes from chat. Confirm before anything publishes.',
     welcome: 'Moville Festival Phase 2 ops. Describe a programme change — then press Confirm before anything publishes.',
+    placeholder: 'e.g. Wednesday 7pm Fancy Dress Parade at Festival Square',
     suggestions: [
       'list programme',
       'Wednesday 7pm Fancy Dress Parade at Festival Square',
@@ -50,6 +53,20 @@ const VENUE_CONFIG = {
       'remove Bed Push from Thursday',
     ],
     defaultRepo: 'WeeTonyCooke/movillefestival',
+    attachPdf: false,
+  },
+  golf: {
+    title: 'Tuns Links ops',
+    lede: 'Stage course status and green fee updates from chat. Confirm before anything publishes.',
+    welcome: 'Tuns Links ops. Type a course status or green fee update — then press Confirm before anything publishes.',
+    placeholder: 'e.g. course closed, frost — or visitor weekend is €95',
+    suggestions: [
+      'list course info',
+      'course closed, frost',
+      'preferred lies in effect on all fairways',
+      'visitor weekday is €80',
+    ],
+    defaultRepo: 'WeeTonyCooke/quiet-objects-golf-demo',
     attachPdf: false,
   },
 }
@@ -384,11 +401,7 @@ export default function App() {
             rows={2}
             value={draft}
             disabled={busy}
-            placeholder={
-              venue === 'festival'
-                ? 'e.g. Wednesday 7pm Fancy Dress Parade at Festival Square'
-                : 'e.g. Steak Burger is 17.50 — or attach a PDF menu'
-            }
+            placeholder={venueConfig.placeholder}
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === 'Enter' && !event.shiftKey) {

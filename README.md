@@ -61,7 +61,7 @@ Copy `.env.example` and set:
 3. Enable **AI Gateway**
 4. Set content token + signing secret
 
-Live pilot site: https://quietobjects-ops.netlify.app
+Live pilot site: https://qo-ops.netlify.app
 
 ## Scripts
 
